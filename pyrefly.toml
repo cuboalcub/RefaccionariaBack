@@ -1,4 +1,4 @@
-project-includes = ["**/*"]
+project-includes = ["**/RTR"]
 project-excludes = [
     "**/node_modules",
     "**/__pycache__",
