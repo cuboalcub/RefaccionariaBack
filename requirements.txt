@@ -1,8 +1,11 @@
 asgiref==3.9.1
+dj-database-url==3.0.1
 Django==5.2.6
 djangorestframework==3.16.1
 djangorestframework_simplejwt==5.5.1
 env==0.1.0
+psycopg2-binary==2.9.10
 PyJWT==2.10.1
 pyrefly==0.31.1
+python-dotenv==1.1.1
 sqlparse==0.5.3

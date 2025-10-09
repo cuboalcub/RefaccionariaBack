@@ -2,6 +2,6 @@ db.sqlite3
 *.pyc
 __pycache__
 .venv
-.env
+**/.env
 migrations
 pyrefly.toml
