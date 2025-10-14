@@ -49,9 +49,30 @@ class UserService:
         """
         users = UserRepository.get_all()
         return [UserService._to_dict(user) for user in users]
-    # ----------------------
-    # Helpers privados
-    # ----------------------
+
+    @staticmethod
+    def get_user_by_id(user_id):
+        """
+        Obtiene un usuario por su ID.
+        """
+        user = UserRepository.get_by_id(user_id)
+        return UserService._to_dict(user)
+
+    @staticmethod
+    def update_user(user_id, user_data):
+        """
+        Actualiza un usuario existente.
+        """
+        user = UserRepository.update(user_id, user_data)
+        return UserService._to_dict(user)
+
+    @staticmethod
+    def delete_user(user_id):
+        """
+        Elimina un usuario por su ID.
+        """
+        return UserRepository.delete(user_id)
+
     @staticmethod
     def _to_dict(user):
         """
@@ -65,3 +86,4 @@ class UserService:
             "email": user.email,
             "is_active": user.is_active,
         }
+
