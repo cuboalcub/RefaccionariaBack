@@ -16,7 +16,7 @@ jobs:
           POSTGRES_DB: mi_db
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: 1234
-          #sasasa
+          #sasasasa
         ports:
           - 5432:5432
 
