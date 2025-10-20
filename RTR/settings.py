@@ -34,7 +34,8 @@ DEBUG = True
 
 ALLOWED_HOSTS = [
         'refaccionariaback.onrender.com',
-        'localhost'
+        'localhost',
+        "127.0.0.1",
 ]
 
 
