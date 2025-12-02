@@ -98,7 +98,11 @@ WSGI_APPLICATION = 'RTR.wsgi.application'
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
 DATABASES = {
-    'default': dj_database_url.config(default=os.getenv('DATABASE_URL'))
+     'default': {
+        'ENGINE': 'django.db.backends.sqlite3',  # or 'django.db.backends.postgresql', etc.
+        'NAME': ':memory:',  # or your test database name
+        # Add other required settings for your database
+    }
 }
 
 
