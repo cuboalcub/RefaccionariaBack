@@ -11,7 +11,7 @@ class TipoService:
         Lógica para crear un nuevo tipo.
         tipo_data debería ser un diccionario con los campos necesarios.
         """
-        required_fields = ['nombre', 'descripcion']
+        required_fields = ['nombre']
         for field in required_fields:
             if field not in tipo_data:
                 raise ValueError(f"Faltan campos obligatorios: {field}")
@@ -70,8 +70,5 @@ class TipoService:
         """
         return {
             "id": tipo.id,
-            "nombre": tipo.nombre,
-            "descripcion": tipo.descripcion,
-            "fecha_creacion": tipo.fecha_creacion,
-            "fecha_modificacion": tipo.fecha_modificacion,
+            "nombre": tipo.nombre
         }
