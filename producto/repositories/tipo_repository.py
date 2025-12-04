@@ -57,7 +57,7 @@ class TipoRepository:
             return None
 
     @staticmethod   
-    def get_by_id(tipo_id)
+    def get_by_id(tipo_id):
         try:
             return Tipo.objects.get(id = tipo_id)
         except ObjectDoesNotExist:
