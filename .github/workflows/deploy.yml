@@ -2,7 +2,7 @@ name: Deploy to Render
 
 on:
   push:
-    branches: [Deploy]  # Cambia "main" por tu rama de despliegue
+    branches: Deploy
 
 jobs:
   deploy:
