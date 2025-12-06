@@ -12,7 +12,7 @@ class ProveedorService:
         Lógica para crear un nuevo proveedor.
         proveedor_data debería ser un diccionario con los campos necesarios.
         """
-        required_fields = ['nombre', 'direccion', 'telefono', 'email', 'contacto']
+        required_fields = ['nombre', 'direccion', 'telefono', 'correo']
         for field in required_fields:
             if field not in proveedor_data:
                 raise ValueError(f"Faltan campos obligatorios: {field}")
@@ -74,8 +74,5 @@ class ProveedorService:
             "nombre": proveedor.nombre,
             "direccion": proveedor.direccion,
             "telefono": proveedor.telefono,
-            "email": proveedor.email,
-            "contacto": proveedor.contacto,
-            "created_at": proveedor.created_at,
-            "updated_at": proveedor.updated_at,
+            "correo": proveedor.correo               
         }

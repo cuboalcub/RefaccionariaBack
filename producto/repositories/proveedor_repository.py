@@ -55,3 +55,10 @@ class ProveedorRepository:
         
         except ObjectDoesNotExist:
             return None
+        
+    @staticmethod
+    def get_by_id(proveedor_id):
+        try:
+            return Proveedor.objects.get(id=proveedor_id)
+        except ObjectDoesNotExist:
+            return None
