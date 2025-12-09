@@ -5,11 +5,11 @@ from producto.controllers.proveedor_controller import ProveedorListCreateView, P
 from producto.controllers.movimiento_controller import MovimientoListCreateView, MovimientoDetailView
 urlpatterns = [
     path('productos/', ProductoListCreateView.as_view(), name='producto-list-create'),
-    path('productos/<int:producto_id>/', ProductoDetailView.as_view(), name='producto-detail'),
+    path('productos/<int:pk>/', ProductoDetailView.as_view(), name='producto-detail'),
     path('tipos/', TipoListCreateView.as_view(), name='tipo-list-create'),
-    path('tipos/<int:tipo_id>/', TipoDetailView.as_view(), name='tipo-detail'),
+    path('tipos/<int:pk>/', TipoDetailView.as_view(), name='tipo-detail'),
     path('proveedores/', ProveedorListCreateView.as_view(), name='proveedor-list-create'),
-    path('proveedores/<int:proveedor_id>/', ProveedorDetailView.as_view(), name='proveedor-detail'),
+    path('proveedores/<int:pk>/', ProveedorDetailView.as_view(), name='proveedor-detail'),
     path('movimientos/', MovimientoListCreateView.as_view(), name='movimiento-list-create'),
-    path('movimientos/<int:movimiento_id>/', MovimientoDetailView.as_view(), name='movimiento-detail'),
+    path('movimientos/<int:pk>/', MovimientoDetailView.as_view(), name='movimiento-detail'),
 ]
