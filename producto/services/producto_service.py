@@ -1,73 +1,48 @@
-
 from producto.repositories.producto_repository import ProductoRepository
-from django.core.exceptions import ValidationError
-from producto.models import Producto, Tipo, Proveedor, Movimiento
-from usuario.repositories.usuario_repositorie import UserRepository
-from django.contrib.auth import authenticate
-from rest_framework_simplejwt.tokens import RefreshToken
+from producto.models import Producto
+from repository.base_service import BaseService
+from producto.repositories.tipo_repository import TipoRepository
+from producto.repositories.proveedor_repository import ProveedorRepository
+from producto.repositories.movimiento_repository import MovimientoRepository
 
-class ProductoService:
+class ProductoService(BaseService):
+    def __init__(self):
+        super().__init__(model=Producto, repository=ProductoRepository())
     
-    @staticmethod
-    def create_producto(producto_data):
-        """
-        Lógica para crear un nuevo producto.
-        producto_data debería ser un diccionario con los campos necesarios.
-        """
-        required_fields = ['id_tipo', 'id_proveedor', 'clave', 'nombre', 'descripcion', 'codigo_barras', 'precio_venta', 'marca', 'existencia', 'costo']
-        for field in required_fields:
-            if field not in producto_data:
-                raise ValueError(f"Faltan campos obligatorios: {field}")
-        
-        # Validar que el tipo y proveedor existen
-        try:
-            tipo = Tipo.objects.get(id=producto_data['id_tipo'])
-        except Tipo.DoesNotExist:
-            raise ValueError("El tipo especificado no existe")
-        
-        try:
-            proveedor = Proveedor.objects.get(id=producto_data['id_proveedor'])
-        except Proveedor.DoesNotExist:
-            raise ValueError("El proveedor especificado no existe")
-        
-        producto = ProductoRepository.create(producto_data)
-        return ProductoService._to_dict(producto)
-    
-    @staticmethod
-    def get_all_productos():
-        """
-        Devuelve una lista de todos los productos.
-        """
-        productos = ProductoRepository.get_all()
-        return [ProductoService._to_dict(producto) for producto in productos]
-    
-    @staticmethod
-    def get_producto_by_id(producto_id):
-        """
-        Devuelve un producto por su ID.
-        """
-        producto = ProductoRepository.get_by_id(producto_id)
-        return ProductoService._to_dict(producto)
-    
-    @staticmethod
-    def update_producto(producto_id, update_data):
-        """
-        Actualiza un producto existente.
-        update_data debería ser un diccionario con los campos a actualizar.
-        """
-        producto = ProductoRepository.get_by_id(producto_id)
-        if not producto:
-            raise ValueError("Producto no encontrado")
-        
-        # Si se actualiza el tipo o proveedor, validar que existen
-        if 'id_tipo' in update_data:
-            try:
-                tipo = Tipo.objects.get(id=update_data['id_tipo'])
-            except Tipo.DoesNotExist:
-                raise ValueError("El tipo especificado no existe")
-        
-        if 'id_proveedor' in update_data:
-            try:
-                proveedor = Proveedor.objects.get(id=update_data['id_proveedor'])
-            except Proveedor.DoesNotExist:
-                raise ValueError("El proveedor especificado no existe")
+
+    def create(self, data):
+        tipo = TipoRepository().get_by_id(data["id_tipo"])
+        proveedor = ProveedorRepository().get_by_id(data["id_proveedor"])
+        movimiento = MovimientoRepository().get_by_id(data["id_movimientos"])
+        data["id_tipo"] = tipo
+        data["id_proveedor"] = proveedor
+        data["id_movimientos"] = movimiento
+        return super().create(data)
+
+    def update(self, instance, data):
+        tipo = TipoRepository().get_by_id(data["id_tipo"])
+        proveedor = ProveedorRepository().get_by_id(data["id_proveedor"])
+        movimiento = MovimientoRepository().get_by_id(data["id_movimientos"])
+        data["id_tipo"] = tipo
+        data["id_proveedor"] = proveedor
+        data["id_movimientos"] = movimiento
+        return super().update(instance, data)
+
+
+
+
+    def _to_dict(self, instance):
+        return {
+            "id": instance.id,
+            "id_tipo": instance.id_tipo.id if instance.id_tipo else None,
+            "id_proveedor": instance.id_proveedor.id if instance.id_proveedor else None,
+            "id_movimientos": instance.id_movimientos.id if instance.id_movimientos else None,
+            "clave": instance.clave,
+            "nombre": instance.nombre,
+            "descripcion": instance.descripcion,
+            "codigo_barras": instance.codigo_barras,
+            "precio_venta": str(instance.precio_venta),
+            "marca": instance.marca,
+            "existencia": instance.existencia,
+            "costo": str(instance.costo)
+        }
