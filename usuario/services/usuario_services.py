@@ -27,7 +27,7 @@ class UserService:
                 }
         }
         return None
- 
+
     @staticmethod
     def create_user(user_data):
         """
@@ -72,6 +72,15 @@ class UserService:
         Elimina un usuario por su ID.
         """
         return UserRepository.delete(user_id)
+
+    @staticmethod
+    def get_by_id(username):
+        """
+        Obtiene un usuario por su nombre de usuario.
+        """
+        user = UserRepository.get_by_username(username)
+        return user
+
 
     @staticmethod
     def _to_dict(user):
