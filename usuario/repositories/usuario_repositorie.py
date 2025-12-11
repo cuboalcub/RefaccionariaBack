@@ -58,3 +58,10 @@ class UserRepository:
         
         except ObjectDoesNotExist:
             return None
+
+    @staticmethod
+    def get_by_id(user_id):
+        try:
+            return User.objects.get(id=user_id)
+        except ObjectDoesNotExist:
+            return None
