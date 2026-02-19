@@ -3,108 +3,201 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>Reporte de Ventas</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reporte de Ventas - {{ tipo|title }}</title>
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            font-size: 12px;
-            margin: 20px;
+        :root {
+            --primary-color: #2c3e50;
+            --accent-color: #3498db;
+            --bg-light: #f8f9fa;
+            --border-color: #dee2e6;
+            --text-dark: #333;
         }
 
-        h1,
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            font-size: 13px;
+            line-height: 1.6;
+            color: var(--text-dark);
+            margin: 40px;
+            background-color: #fff;
+        }
+
+        /* Encabezados */
+        .header-container {
+            text-align: center;
+            border-bottom: 2px solid var(--primary-color);
+            margin-bottom: 30px;
+            padding-bottom: 10px;
+        }
+
+        h1 {
+            margin: 0;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--primary-color);
+        }
+
         h2 {
+            font-weight: 400;
+            color: #666;
+            margin-top: 5px;
+        }
+
+        /* Tabla Principal */
+        .main-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.05);
+        }
+
+        .main-table>thead th {
+            background-color: var(--primary-color);
+            color: white;
+            padding: 12px;
+            text-align: left;
+            border: none;
+        }
+
+        /* Filas de Venta */
+        .venta-row {
+            background-color: var(--bg-light);
+            font-weight: bold;
+        }
+
+        .venta-row td {
+            border-top: 1px solid var(--border-color);
+            padding: 10px;
+        }
+
+        /* Contenedor de Detalles (Anidado) */
+        .detalles-container {
+            padding: 15px 30px;
+            background-color: #ffffff;
+        }
+
+        .inner-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+        }
+
+        .inner-table th {
+            font-size: 11px;
+            text-transform: uppercase;
+            color: #777;
+            border-bottom: 1px solid var(--border-color);
+            padding: 8px;
+        }
+
+        .inner-table td {
+            padding: 8px;
+            border-bottom: 1px dotted #eee;
+        }
+
+        /* Alineaciones y Estilos de Celda */
+        .text-right {
+            text-align: right;
+        }
+
+        .text-center {
             text-align: center;
         }
 
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 15px;
-            margin-bottom: 30px;
+        .currency {
+            font-family: 'Courier New', monospace;
+            font-weight: 600;
         }
 
-        th,
-        td {
-            border: 1px solid #333;
-            padding: 8px;
-            text-align: left;
+        .total-general-label {
+            font-size: 16px;
+            padding: 20px !important;
         }
 
-        th {
-            background-color: #f2f2f2;
+        .total-general-monto {
+            font-size: 18px;
+            color: #e74c3c;
+            padding: 20px !important;
         }
 
-        .subtotal {
-            text-align: right;
+        /* Badge para Método de Pago */
+        .badge {
+            padding: 4px 8px;
+            border-radius: 4px;
+            background: #e9ecef;
+            font-size: 11px;
         }
 
-        .total {
-            font-weight: bold;
-            text-align: right;
-        }
+        @media print {
+            body {
+                margin: 0;
+            }
 
-        .venta-detalles {
-            margin-left: 20px;
-            margin-top: 5px;
-            margin-bottom: 10px;
+            .main-table {
+                box-shadow: none;
+            }
+
+            tr {
+                page-break-inside: avoid;
+            }
         }
     </style>
 </head>
 
 <body>
-    <h1>Reporte de Ventas</h1>
-    <h2>{{ tipo|title }} ({{ fecha_inicio }} - {{ fecha_fin }})</h2>
+    <div class="header-container">
+        <h1>Reporte de Ventas</h1>
+        <h2>{{ tipo|title }} <br> <small>{{ fecha_inicio }} — {{ fecha_fin }}</small></h2>
+    </div>
 
-    <table>
+    <table class="main-table">
         <thead>
             <tr>
                 <th>ID Venta</th>
-                <th>Fecha</th>
+                <th>Fecha / Hora</th>
                 <th>Vendedor</th>
-                <th>Método de Pago</th>
-                <th>Total</th>
+                <th class="text-center">Método de Pago</th>
+                <th class="text-right">Monto Total</th>
             </tr>
         </thead>
         <tbody>
             {% for venta in ventas %}
-            <tr>
-                <td>{{ venta.id }}</td>
+            <tr class="venta-row">
+                <td>#{{ venta.id }}</td>
                 <td>{{ venta.fecha }}</td>
                 <td>{{ venta.vendedor }}</td>
-                <td>{{ venta.metodo_pago }}</td>
-                <td class="total">{{ venta.total }}</td>
+                <td class="text-center"><span class="badge">{{ venta.metodo_pago }}</span></td>
+                <td class="text-right currency">{{ venta.total }}</td>
             </tr>
             <tr>
-                <td colspan="5">
-                    <div class="venta-detalles">
-                        <strong>Detalles de la venta:</strong>
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>Producto</th>
-                                    <th>Cantidad</th>
-                                    <th>Subtotal</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for detalle in venta.detalles %}
-                                <tr>
-                                    <td>{{ detalle.producto }}</td>
-                                    <td>{{ detalle.cantidad }}</td>
-                                    <td class="subtotal">{{ detalle.subtotal }}</td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
+                <td colspan="5" class="detalles-container">
+                    <table class="inner-table">
+                        <thead>
+                            <tr>
+                                <th>Producto</th>
+                                <th class="text-center">Cantidad</th>
+                                <th class="text-right">Subtotal</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for detalle in venta.detalles %}
+                            <tr>
+                                <td>{{ detalle.producto }}</td>
+                                <td class="text-center">{{ detalle.cantidad }}</td>
+                                <td class="text-right currency">{{ detalle.subtotal }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
                 </td>
             </tr>
             {% endfor %}
         </tbody>
         <tfoot>
             <tr>
-                <td colspan="4" class="total">Total General:</td>
-                <td class="total">{{ total_general }}</td>
+                <td colspan="4" class="text-right total-general-label"><strong>TOTAL NETO:</strong></td>
+                <td class="text-right total-general-monto currency">{{ total_general }}</td>
             </tr>
         </tfoot>
     </table>
