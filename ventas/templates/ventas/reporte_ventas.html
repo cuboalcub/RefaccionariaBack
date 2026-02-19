@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Reporte de Ventas</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            font-size: 12px;
+            margin: 20px;
+        }
+
+        h1,
+        h2 {
+            text-align: center;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+            margin-bottom: 30px;
+        }
+
+        th,
+        td {
+            border: 1px solid #333;
+            padding: 8px;
+            text-align: left;
+        }
+
+        th {
+            background-color: #f2f2f2;
+        }
+
+        .subtotal {
+            text-align: right;
+        }
+
+        .total {
+            font-weight: bold;
+            text-align: right;
+        }
+
+        .venta-detalles {
+            margin-left: 20px;
+            margin-top: 5px;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Reporte de Ventas</h1>
+    <h2>{{ tipo|title }} ({{ fecha_inicio }} - {{ fecha_fin }})</h2>
+
+    <table>
+        <thead>
+            <tr>
+                <th>ID Venta</th>
+                <th>Fecha</th>
+                <th>Vendedor</th>
+                <th>Método de Pago</th>
+                <th>Total</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for venta in ventas %}
+            <tr>
+                <td>{{ venta.id }}</td>
+                <td>{{ venta.fecha }}</td>
+                <td>{{ venta.vendedor }}</td>
+                <td>{{ venta.metodo_pago }}</td>
+                <td class="total">{{ venta.total }}</td>
+            </tr>
+            <tr>
+                <td colspan="5">
+                    <div class="venta-detalles">
+                        <strong>Detalles de la venta:</strong>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Producto</th>
+                                    <th>Cantidad</th>
+                                    <th>Subtotal</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for detalle in venta.detalles %}
+                                <tr>
+                                    <td>{{ detalle.producto }}</td>
+                                    <td>{{ detalle.cantidad }}</td>
+                                    <td class="subtotal">{{ detalle.subtotal }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+        <tfoot>
+            <tr>
+                <td colspan="4" class="total">Total General:</td>
+                <td class="total">{{ total_general }}</td>
+            </tr>
+        </tfoot>
+    </table>
+</body>
+
+</html>
