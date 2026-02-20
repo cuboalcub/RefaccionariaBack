@@ -24,6 +24,6 @@ class DetalleVentaService(BaseService):
         venta = venta_repository.get_by_id(data['id_venta'])
         data["id_venta"] = venta
         data["id_producto"] = producto
-        producto_repository.update(producto, {"existencia": producto.existencia - data["cantidad"]})
+        data["subtotal"] = producto.precio_venta * data["cantidad"]
 
         return super().create(data)

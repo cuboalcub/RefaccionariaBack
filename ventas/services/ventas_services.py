@@ -20,18 +20,44 @@ class VentaService(BaseService):
         }
     
     def create(self, data):
-
+        # Repositorios y servicios necesarios
         user_repository = UserRepository()
-        user = user_repository.get_by_id(data['id_usuario'])
+        metodo_pago_repository = MetodoPagoRepository()
+        producto_repository = ProductoRepository()
+        detalle_venta_service = DetalleVentaService()
 
-        metodoPago_repository = MetodoPagoRepository()
-        metodoPago = metodoPago_repository.get_by_id(data['id_metodoPago'])
+        # Obtener instancias de usuario y método de pago para la venta
+        user = user_repository.get_by_id(data['id_usuario'])
+        metodo_pago = metodo_pago_repository.get_by_id(data['id_metodoPago'])
         
+        # Primero calculamos el total recorriendo los productos
+        total = 0
+        for item in data['productos']:
+            producto_db = producto_repository.get_by_id(item['id'])
+            if producto_db.existencia < item['cantidad']:
+                raise ValueError("No hay suficiente stock para la venta")
+            existencia = producto_db.existencia - item['cantidad']
+            producto_repository.update(producto_db, {"existencia": existencia})
+            total += producto_db.precio_venta * item['cantidad']
+
+        # Preparamos los datos para crear la venta
         venta_data = {
             "id_usuario": user,
-            "id_metodoPago": metodoPago,
-            "total": data.get('total', 0)
+            "id_metodoPago": metodo_pago,
+            "total": total
         }
-        venta = super().create(venta_data)
         
-        return venta
+        # Creamos la venta primero para obtener su ID
+        # super().create retorna un diccionario con los datos de la venta creada
+        venta_dict = super().create(venta_data)
+        venta_id = venta_dict['id']
+
+        # Ahora creamos los detalles de la venta usando el ID de la venta recién creada
+        for item in data['productos']:
+            detalle_venta_service.create({
+                "id_producto": item['id'],
+                "id_venta": venta_id,
+                "cantidad": item['cantidad']
+            })
+        
+        return venta_dict

@@ -8,7 +8,7 @@ from ventas.services.reporte_ventas_service import ReporteVentasService
 
 
 class ReporteVentasView(APIView):
-    permission_classes = [IsAuthenticated]
+    #permission_classes = [IsAuthenticated]
 
     def get(self, request):
         tipo = request.query_params.get("tipo")
