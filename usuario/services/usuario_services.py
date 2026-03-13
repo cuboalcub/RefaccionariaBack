@@ -22,6 +22,7 @@ class UserService:
                 "access": str(refresh.access_token),
                 "user": {
                     "id": user.id,
+                    "username": user.username,
                     "isadmin": user.is_superuser,
                     "isstaff": user.is_staff,
                 }
