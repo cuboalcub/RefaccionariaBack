@@ -1,3 +1,4 @@
+from django.db.models import Sum
 from ventas.models import venta
 from repository.base_repository import BaseRepository
 
@@ -14,3 +15,8 @@ class VentaRepository(BaseRepository):
             .prefetch_related('detalleventa_set__id_producto')
             .order_by('fecha')
         )
+
+    def get_total_ventas_por_rango(self, fecha_inicio, fecha_fin):
+        return self.model_class.objects.filter(
+            fecha__range=(fecha_inicio, fecha_fin)
+        ).aggregate(total_general=Sum('total'))['total_general'] or 0

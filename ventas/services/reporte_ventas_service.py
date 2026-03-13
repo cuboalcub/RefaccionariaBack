@@ -16,7 +16,10 @@ class ReporteVentasService:
             fecha_fin
         )
 
-        total_general = sum(v.total for v in ventas)
+        total_general = self.venta_repository.get_total_ventas_por_rango(
+            fecha_inicio,
+            fecha_fin
+        )
 
         data = []
 
@@ -32,7 +35,7 @@ class ReporteVentasService:
             data.append({
                 "id": venta.id,
                 "fecha": venta.fecha,
-                "vendedor": str(venta.id_usuario),
+                "vendedor": f"{venta.id_usuario.first_name} {venta.id_usuario.last_name}" if venta.id_usuario and (venta.id_usuario.first_name or venta.id_usuario.last_name) else str(venta.id_usuario),
                 "metodo_pago": venta.id_metodoPago.tipo if venta.id_metodoPago else None,
                 "total": venta.total,
                 "detalles": detalles

@@ -6,6 +6,13 @@ from producto.services.producto_service import ProductoService
 class ProductoListCreateView(BaseListController):
     def __init__(self):
         super().__init__(ProductoService)
+    
+    def get_by_codigo_barras(self, request):
+        codigo_barras = request.query_params.get("codigo_barras")
+        producto = ProductoService.get_producto_by_codigo_barras(codigo_barras)
+        if producto:
+            return Response(producto, status=status.HTTP_200_OK)
+        return Response({"error": "Producto no encontrado"}, status=status.HTTP_404_NOT_FOUND)
 
 
 class ProductoDetailView(BaseDetailController):

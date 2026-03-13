@@ -29,6 +29,12 @@ class ProductoService(BaseService):
         return super().update(instance, data)
 
 
+    def get_by_codigo_barras(self, codigo_barras):
+        producto = self.repository.get_by_codigo_barras(codigo_barras)
+        if producto:
+            return self._to_dict(producto)
+        return None
+
 
 
     def _to_dict(self, instance):
