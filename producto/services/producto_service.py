@@ -28,8 +28,12 @@ class ProductoService(BaseService):
         data["id_movimientos"] = movimiento
         return super().update(instance, data)
 
-
-
+    def get_all(self):
+        try:
+            instances = self.repository.get_all()
+            return [self._to_dict(instance) for instance in instances if instance.existencia > 0]
+        except Exception as e:
+            raise ValueError(f"Error al obtener todos: {str(e)}")
 
     def _to_dict(self, instance):
         return {
