@@ -1,22 +1,22 @@
 name: Deploy to Render
 
 on:
-  push:
-    branches: Deploy
+  pull_request:
+    branches: [Deploy]
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    
+
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
-    
-    - name: Deploy to Render
-      run: |
-        curl -X POST \
-          -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
-          -H "Content-Type: application/json" \
-          "https://api.render.com/v1/services/srv-d3nvc3hr0fns73e08n60/deploys"
-      env:
-        RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Deploy to Render
+        run: |
+          curl -X POST \
+            -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            "https://api.render.com/v1/services/srv-d3nvc3hr0fns73e08n60/deploys"
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
