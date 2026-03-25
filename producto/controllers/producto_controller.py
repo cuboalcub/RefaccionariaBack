@@ -1,12 +1,25 @@
 
+from rest_framework.response import Response
+from rest_framework import status
 from repository.base_controller import BaseListController
 from repository.base_controller import BaseDetailController
 
 from producto.services.producto_service import ProductoService
+
 class ProductoListCreateView(BaseListController):
     def __init__(self):
         super().__init__(ProductoService)
-    
+
+    def get(self, request):
+        page_param = request.query_params.get("page")
+        page_size = int(request.query_params.get("page_size", 10))
+        if page_param is not None:
+            page = int(page_param)
+            data = self.service.get_all(page=page, page_size=page_size)
+        else:
+            data = self.service.get_all()
+        return Response(data, status=status.HTTP_200_OK)
+
     def get_by_codigo_barras(self, request):
         codigo_barras = request.query_params.get("codigo_barras")
         producto = ProductoService.get_producto_by_codigo_barras(codigo_barras)
