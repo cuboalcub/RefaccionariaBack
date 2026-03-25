@@ -29,6 +29,29 @@ class ProductoService(BaseService):
         return super().update(instance, data)
 
 
+    def get_all(self, page: int = None, page_size: int = 10):
+        """Devuelve productos con paginación opcional."""
+        try:
+            all_instances = self.repository.get_all()
+            total = len(all_instances)
+
+            if page is not None:
+                start = (page - 1) * page_size
+                end = start + page_size
+                instances = all_instances[start:end]
+                import math
+                return {
+                    "total": total,
+                    "page": page,
+                    "page_size": page_size,
+                    "total_pages": math.ceil(total / page_size),
+                    "results": [self._to_dict(i) for i in instances],
+                }
+
+            return [self._to_dict(i) for i in all_instances]
+        except Exception as e:
+            raise ValueError(f"Error al obtener productos: {str(e)}")
+
     def get_by_codigo_barras(self, codigo_barras):
         producto = self.repository.get_by_codigo_barras(codigo_barras)
         if producto:
