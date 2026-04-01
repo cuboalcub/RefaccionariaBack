@@ -58,7 +58,11 @@ class ProductoService(BaseService):
             return self._to_dict(producto)
         return None
 
-
+    def get_by_categoria(self, categoria):
+        producto = self.repository.get_by_categoria(categoria) 
+        if producto:
+            return [self._to_dict(i) for i in producto]
+        return None
 
     def _to_dict(self, instance):
         return {
@@ -75,3 +79,6 @@ class ProductoService(BaseService):
             "existencia": instance.existencia,
             "costo": str(instance.costo)
         }
+
+
+

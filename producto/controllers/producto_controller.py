@@ -1,10 +1,9 @@
-
-from rest_framework.response import Response
 from rest_framework import status
-from repository.base_controller import BaseListController
-from repository.base_controller import BaseDetailController
+from rest_framework.response import Response
 
 from producto.services.producto_service import ProductoService
+from repository.base_controller import BaseDetailController, BaseListController
+
 
 class ProductoListCreateView(BaseListController):
     def __init__(self):
@@ -25,49 +24,20 @@ class ProductoListCreateView(BaseListController):
         producto = ProductoService.get_producto_by_codigo_barras(codigo_barras)
         if producto:
             return Response(producto, status=status.HTTP_200_OK)
-        return Response({"error": "Producto no encontrado"}, status=status.HTTP_404_NOT_FOUND)
+        return Response(
+            {"error": "Producto no encontrado"}, status=status.HTTP_404_NOT_FOUND
+        )
+
+    def get_by_categoria(self, request):
+        categoria = request.query_params.get("categoria")
+        producto = ProductoService.get_by_categoria(categoria)
+        if producto:
+            return Response(producto, status=status.HTTP_200_OK)
+        return Response(
+            {"error": "Producto no encontrado"}, status=status.HTTP_404_NOT_FOUND
+        )
 
 
 class ProductoDetailView(BaseDetailController):
     def __init__(self):
         super().__init__(ProductoService)
-# class ProductoDetailView(APIView):
-#     """
-#     Controlador para obtener, actualizar o eliminar un producto por ID.
-#     """
-
-#     def get(self, request, producto_id):
-#         producto = ProductoService.get_producto_by_id(producto_id)
-#         if producto:
-#             return Response(producto, status=status.HTTP_200_OK)
-#         return Response({"error": "Producto no encontrado"}, status=status.HTTP_404_NOT_FOUND)
-
-#     def put(self, request, producto_id):
-#         try:
-#             updated_producto = ProductoService.update_producto(producto_id, request.data)
-#             return Response(updated_producto, status=status.HTTP_200_OK)
-#         except ValueError as e:
-#             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
-#     def delete(self, request, producto_id):
-#         deleted = ProductoService.delete_producto(producto_id)
-#         if deleted:
-#             return Response({"message": "Producto eliminado"}, status=status.HTTP_200_OK)
-#         return Response({"error": "Producto no encontrado"}, status=status.HTTP_404_NOT_FOUND)   
-
-# class ProductoListCreateView(APIView):
-#     """
-#     Controlador para listar productos o crear uno nuevo.
-#     """
-
-#     def get(self, request):
-#         productos = ProductoService.get_all_productos()
-#         return Response(productos, status=status.HTTP_200_OK)
-
-#     def post(self, request):
-#         try:
-#             producto_data = request.data
-#             producto = ProductoService.create_producto(producto_data)
-#             return Response(producto, status=status.HTTP_201_CREATED)
-#         except ValueError as e:
-#             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)

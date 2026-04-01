@@ -59,30 +59,28 @@ class BaseService(IService):
         except Exception as e:
             raise ValueError(f"Error al obtener todos: {str(e)}")
 
-    def get_by_id(self, id: int) -> Dict[str, Any]:
+    def get_by_id(self, entity_id: int) -> Dict[str, Any]:
         """Devuelve una instancia por su ID"""
         try:
-            instance = self.repository.get_by_id(id)
+            instance = self.repository.get_by_id(entity_id)
             
             if not instance:
-                raise ObjectDoesNotExist(f"{self.model.__name__} con id {id} no encontrado")
+                raise ObjectDoesNotExist(f"{self.model.__name__} con id {entity_id} no encontrado")
             
             return self._to_dict(instance)
             
         except ObjectDoesNotExist:
-            raise ValueError(f"{self.model.__name__} con id {id} no encontrado")
+            raise ValueError(f"{self.model.__name__} con id {entity_id} no encontrado")
         except Exception as e:
             raise ValueError(f"Error al obtener por id: {str(e)}")
 
-    def update(self, id: int, data: Dict[str, Any]) -> Dict[str, Any]:
+    def update(self, entity_id: int, data: Dict[str, Any]) -> Dict[str, Any]:
         """Actualiza una instancia existente"""
         try:
-
-            instance = self.repository.get_by_id(id)
-
+            instance = self.repository.get_by_id(entity_id)
             
             if not instance:
-                raise ObjectDoesNotExist(f"{self.model.__name__} con id {id} no encontrado")
+                raise ObjectDoesNotExist(f"{self.model.__name__} con id {entity_id} no encontrado")
             
             # Validar campos únicos si es necesario
             for key, value in data.items():
@@ -92,22 +90,22 @@ class BaseService(IService):
             return self._to_dict(instance)
             
         except ObjectDoesNotExist:
-            raise ValueError(f"{self.model.__name__} con id {id} no encontrado")
+            raise ValueError(f"{self.model.__name__} con id {entity_id} no encontrado")
         except ValidationError as e:
             raise ValueError(f"Error de validación: {e}")
         except Exception as e:
             raise ValueError(f"Error al actualizar: {str(e)}")
 
-    def delete(self, id: int, user: Optional[Any] = None) -> Dict[str, str]:
+    def delete(self, entity_id: int, user: Optional[Any] = None) -> Dict[str, str]:
         """Elimina una instancia por su ID"""
         try:
             if self.repository:
-                instance = self.repository.get_by_id(id)
+                instance = self.repository.get_by_id(entity_id)
             else:
-                instance = self.model.objects.get(id=id)
+                instance = self.model.objects.get(id=entity_id)
             
             if not instance:
-                raise ObjectDoesNotExist(f"{self.model.__name__} con id {id} no encontrado")
+                raise ObjectDoesNotExist(f"{self.model.__name__} con id {entity_id} no encontrado")
             
             # Opcional: registro de quién eliminó (si se proporciona user)
             if user:
@@ -118,7 +116,7 @@ class BaseService(IService):
             return {"message": f"{self.model.__name__} eliminado exitosamente"}
             
         except ObjectDoesNotExist:
-            raise ValueError(f"{self.model.__name__} con id {id} no encontrado")
+            raise ValueError(f"{self.model.__name__} con id {entity_id} no encontrado")
         except Exception as e:
             raise ValueError(f"Error al eliminar: {str(e)}")
 
@@ -137,12 +135,12 @@ class BaseService(IService):
         except Exception as e:
             raise ValueError(f"Error al filtrar: {str(e)}")
 
-    def exists(self, id: int) -> bool:
+    def exists(self, entity_id: int) -> bool:
         """Verifica si una instancia existe"""
         try:
             if self.repository:
-                return self.repository.exists(id)
-            return self.model.objects.filter(id=id).exists()
+                return self.repository.exists(entity_id)
+            return self.model.objects.filter(id=entity_id).exists()
         except Exception as e:
             raise ValueError(f"Error al verificar existencia: {str(e)}")
 

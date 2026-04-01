@@ -1,4 +1,3 @@
-# repositories/base_repository.py
 from typing import Any
 from typing import List, Optional, Type, Dict
 from django.db import models
@@ -12,9 +11,9 @@ class BaseRepository(IRepository[models.Model]):
     def __init__(self, model_class: Type[models.Model]):
         self.model_class = model_class
 
-    def get_by_id(self, id: int) -> Optional[models.Model]:
+    def get_by_id(self, entity_id: int) -> Optional[models.Model]:
         try:
-            return self.model_class.objects.get(id=id)
+            return self.model_class.objects.get(id=entity_id)
         except ObjectDoesNotExist:
             return None
 

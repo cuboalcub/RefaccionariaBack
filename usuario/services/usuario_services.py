@@ -8,26 +8,35 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 
 class UserService:
+    """
+    Service class for user-related business logic and repository interaction.
+    """
+
 
     @staticmethod
     def login(username, password):
         """
         Autentica al usuario y devuelve un JWT (access + refresh).
         """
-        user = UserRepository.get_by_username(username)
-        if user.check_password(password):
-            refresh = RefreshToken.for_user(user)
-            return {
-                "refresh": str(refresh),
-                "access": str(refresh.access_token),
-                "user": {
-                    "id": user.id,
-                    "username": user.username,
-                    "isadmin": user.is_superuser,
-                    "isstaff": user.is_staff,
-                }
-        }
-        return None
+        try:
+            user = UserRepository.get_by_username(username)
+            if not user:
+                raise ValueError("Usuario no encontrado")
+            if user.check_password(password):
+                refresh = RefreshToken.for_user(user)
+                return {
+                    "refresh": str(refresh),
+                    "access": str(refresh.access_token),
+                    "user": {
+                        "id": user.id,
+                        "username": user.username,
+                        "isadmin": user.is_superuser,
+                        "isstaff": user.is_staff,
+                    }
+            }
+            raise ValueError("Credenciales inválidas")
+        except Exception as e:
+            raise ValueError(f"Error al iniciar sesión: {str(e)}") from e
 
     @staticmethod
     def create_user(user_data):

@@ -15,10 +15,11 @@ class UserLoginView(APIView):
     def post(self, request):
         username = request.data.get("username")
         password = request.data.get("password")
-        user = UserService.login(username, password)
-        if user:
+        try:
+            user = UserService.login(username, password)
             return Response(user, status=status.HTTP_200_OK)
-        return Response({"error": "Credenciales inválidas"}, status=status.HTTP_401_UNAUTHORIZED)
+        except ValueError as e:
+            return Response({"error": str(e)}, status=status.HTTP_401_UNAUTHORIZED)
 
 class UserListCreateView(APIView):
     """
