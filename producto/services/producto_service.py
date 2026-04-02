@@ -19,14 +19,14 @@ class ProductoService(BaseService):
         data["id_movimientos"] = movimiento
         return super().create(data)
 
-    def update(self, instance, data):
+    def update(self, entity_id, data):
         tipo = TipoRepository().get_by_id(data["id_tipo"])
         proveedor = ProveedorRepository().get_by_id(data["id_proveedor"])
         movimiento = MovimientoRepository().get_by_id(data["id_movimientos"])
         data["id_tipo"] = tipo
         data["id_proveedor"] = proveedor
         data["id_movimientos"] = movimiento
-        return super().update(instance, data)
+        return super().update(entity_id, data)
 
 
     def get_all(self, page: int = None, page_size: int = 10):
@@ -50,7 +50,7 @@ class ProductoService(BaseService):
 
             return [self._to_dict(i) for i in all_instances]
         except Exception as e:
-            raise ValueError(f"Error al obtener productos: {str(e)}")
+            raise ValueError(f"Error al obtener productos: {str(e)}") from e
 
     def get_by_codigo_barras(self, codigo_barras):
         producto = self.repository.get_by_codigo_barras(codigo_barras)
@@ -58,11 +58,32 @@ class ProductoService(BaseService):
             return self._to_dict(producto)
         return None
 
-    def get_by_categoria(self, categoria):
-        producto = self.repository.get_by_categoria(categoria) 
-        if producto:
+    def get_by_categoria(self, categoria, page: int = None, page_size: int = 10):
+        """Devuelve productos por categoría con paginación opcional."""
+        try:
+            producto = self.repository.get_by_categoria(categoria)
+            if not producto:
+                return None
+            
+            total = len(producto)
+
+            if page is not None:
+                start = (page - 1) * page_size
+                end = start + page_size
+                instances = producto[start:end]
+                import math
+                return {
+                    "total": total,
+                    "page": page,
+                    "page_size": page_size,
+                    "total_pages": math.ceil(total / page_size),
+                    "results": [self._to_dict(i) for i in instances],
+                }
+
             return [self._to_dict(i) for i in producto]
-        return None
+        except Exception as e:
+            raise ValueError(f"Error al obtener productos por categoría: {str(e)}") from e
+
 
     def _to_dict(self, instance):
         return {

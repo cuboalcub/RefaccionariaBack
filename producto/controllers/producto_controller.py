@@ -11,22 +11,21 @@ class ProductoListCreateView(BaseListController):
 
     def get(self, request):
         categoria = request.query_params.get("categoria")
+        page_param = request.query_params.get("page")
+        page_size = int(request.query_params.get("page_size", 10))
+        page = int(page_param) if page_param is not None else None
+
         if categoria:
-            data = self.service.get_by_categoria(categoria)
+            data = self.service.get_by_categoria(categoria, page=page, page_size=page_size)
             if data is not None:
                 return Response(data, status=status.HTTP_200_OK)
             return Response(
-                {"error": "Categoria no encontrada"}, status=status.HTTP_404_NOT_FOUND
+                {"error": "Categoria no encontrada o sin productos"}, status=status.HTTP_404_NOT_FOUND
             )
 
-        page_param = request.query_params.get("page")
-        page_size = int(request.query_params.get("page_size", 10))
-        if page_param is not None:
-            page = int(page_param)
-            data = self.service.get_all(page=page, page_size=page_size)
-        else:
-            data = self.service.get_all()
+        data = self.service.get_all(page=page, page_size=page_size)
         return Response(data, status=status.HTTP_200_OK)
+
 
     def get_by_codigo_barras(self, request):
         codigo_barras = request.query_params.get("codigo_barras")
@@ -39,12 +38,17 @@ class ProductoListCreateView(BaseListController):
 
     def get_by_categoria(self, request):
         categoria = request.query_params.get("categoria")
-        producto = self.service.get_by_categoria(categoria)
+        page_param = request.query_params.get("page")
+        page_size = int(request.query_params.get("page_size", 10))
+        page = int(page_param) if page_param is not None else None
+
+        producto = self.service.get_by_categoria(categoria, page=page, page_size=page_size)
         if producto:
             return Response(producto, status=status.HTTP_200_OK)
         return Response(
             {"error": "Producto no encontrado"}, status=status.HTTP_404_NOT_FOUND
         )
+
 
 
 class ProductoDetailView(BaseDetailController):
