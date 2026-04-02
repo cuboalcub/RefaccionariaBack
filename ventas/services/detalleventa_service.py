@@ -15,6 +15,7 @@ class DetalleVentaService(BaseService):
             "id_producto": instance.id_producto.id if instance.id_producto else None,
             "id_venta": instance.id_venta.id if instance.id_venta else None,
             "cantidad": instance.cantidad,
+            "subtotal": str(instance.subtotal) if instance.subtotal else "0.00",
         }
 
     def create(self, data):
@@ -32,20 +33,43 @@ class DetalleVentaService(BaseService):
         return super().create(data)
 
     def get_by_id(self, entity_id):
-        detalle = self.repository.get_by_id(entity_id)
-        if detalle:
-            productos = ProductoRepository()
-            producto = productos.get_by_id(detalle.id_producto.id)
-            return {
-                "id": detalle.id,
-                "id_producto": detalle.id_producto.id if detalle.id_producto else None,
-                "id_venta": detalle.id_venta.id if detalle.id_venta else None,
-                "cantidad": detalle.cantidad,
-                "subtotal": str(detalle.subtotal),
-                "producto": {
-                    "id": producto.id,
-                    "nombre": producto.nombre,
-                    "precio_venta": str(producto.precio_venta),
-                },
-            }
-        return None
+        ventas = VentaRepository()
+        venta = ventas.get_by_id(entity_id)
+        if not venta:
+            return None
+
+        detalles = self.repository.get_by_venta(venta.id)
+        producto_repository = ProductoRepository()
+        detalles_list = []
+
+        for detalle in detalles:
+            producto_data = None
+            if detalle.id_producto:
+                p = producto_repository.get_by_id(detalle.id_producto.id)
+                if p:
+                    producto_data = {
+                        "id": p.id,
+                        "nombre": p.nombre,
+                        "precio_venta": str(p.precio_venta),
+                        "codigo_barras": p.codigo_barras,
+                    }
+
+            detalles_list.append(
+                {
+                    "id": detalle.id,
+                    "producto": producto_data,
+                    "cantidad": detalle.cantidad,
+                    "subtotal": str(detalle.subtotal) if detalle.subtotal else "0.00",
+                }
+            )
+
+        return {
+            "id": venta.id,
+            "fecha": venta.fecha.isoformat() if venta.fecha else None,
+            "total": str(venta.total),
+            "detalles": detalles_list,
+        }
+
+    def get_by_venta(self, entity_id):
+        detalle = self.repository.get_by_venta(entity_id)
+        return detalle

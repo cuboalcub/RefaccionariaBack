@@ -10,6 +10,15 @@ class ProductoListCreateView(BaseListController):
         super().__init__(ProductoService)
 
     def get(self, request):
+        categoria = request.query_params.get("categoria")
+        if categoria:
+            data = self.service.get_by_categoria(categoria)
+            if data is not None:
+                return Response(data, status=status.HTTP_200_OK)
+            return Response(
+                {"error": "Categoria no encontrada"}, status=status.HTTP_404_NOT_FOUND
+            )
+
         page_param = request.query_params.get("page")
         page_size = int(request.query_params.get("page_size", 10))
         if page_param is not None:
@@ -21,7 +30,7 @@ class ProductoListCreateView(BaseListController):
 
     def get_by_codigo_barras(self, request):
         codigo_barras = request.query_params.get("codigo_barras")
-        producto = ProductoService.get_producto_by_codigo_barras(codigo_barras)
+        producto = self.service.get_by_codigo_barras(codigo_barras)
         if producto:
             return Response(producto, status=status.HTTP_200_OK)
         return Response(
@@ -30,7 +39,7 @@ class ProductoListCreateView(BaseListController):
 
     def get_by_categoria(self, request):
         categoria = request.query_params.get("categoria")
-        producto = ProductoService.get_by_categoria(categoria)
+        producto = self.service.get_by_categoria(categoria)
         if producto:
             return Response(producto, status=status.HTTP_200_OK)
         return Response(
