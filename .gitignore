@@ -6,3 +6,4 @@ __pycache__
 migrations
 pyrefly.toml
 bruno/*
+venv/
