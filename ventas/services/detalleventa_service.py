@@ -1,3 +1,4 @@
+from decimal import Decimal
 from producto.repositories.producto_repository import ProductoRepository
 from repository.base_service import BaseService
 from ventas.models import detalleVenta
@@ -25,10 +26,9 @@ class DetalleVentaService(BaseService):
         venta = venta_repository.get_by_id(data["id_venta"])
         data["id_venta"] = venta
         data["id_producto"] = producto
-        data["subtotal"] = (
-            producto.precio_venta * data["cantidad"]
-            + producto.precio_venta * data["cantidad"] * 0.16
-        )
+        precio_venta = producto.precio_venta
+        cantidad = int(data["cantidad"])
+        data["subtotal"] = (precio_venta * cantidad) * Decimal("1.16")
 
         return super().create(data)
 

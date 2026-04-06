@@ -1,3 +1,4 @@
+from decimal import Decimal
 from ventas.services.detalleventa_service import DetalleVentaService
 from ventas.models import venta
 from ventas.repositories.ventas_repository import VentaRepository
@@ -31,14 +32,14 @@ class VentaService(BaseService):
         metodo_pago = metodo_pago_repository.get_by_id(data['id_metodoPago'])
         
         # Primero calculamos el total recorriendo los productos
-        total = 0
+        total = Decimal("0")
         for item in data['productos']:
             producto_db = producto_repository.get_by_id(item['id'])
             if producto_db.existencia < item['cantidad']:
                 raise ValueError("No hay suficiente stock para la venta")
             existencia = producto_db.existencia - item['cantidad']
             producto_repository.update(producto_db, {"existencia": existencia})
-            total += producto_db.precio_venta * item['cantidad']
+            total += (producto_db.precio_venta * item['cantidad']) * Decimal("1.16")
 
         # Preparamos los datos para crear la venta
         venta_data = {

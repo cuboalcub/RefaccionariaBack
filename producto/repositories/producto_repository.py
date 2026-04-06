@@ -11,3 +11,8 @@ class ProductoRepository(BaseRepository):
 
     def get_by_categoria(self, categoria: str):
         return Producto.objects.filter(id_tipo__nombre=categoria).all()
+
+    def search(self, query: str):
+        return Producto.objects.filter(
+            Q(nombre__icontains=query) | Q(clave__icontains=query)
+        ).all()
