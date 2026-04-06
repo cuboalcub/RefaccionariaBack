@@ -63,4 +63,9 @@ urlpatterns = [
         ProductoListCreateView.as_view(),
         name="producto-get-by-categoria",
     ),
+    path(
+        "productos/search/",
+        ProductoListCreateView.as_view(),
+        name="producto-search",
+    ),
 ]

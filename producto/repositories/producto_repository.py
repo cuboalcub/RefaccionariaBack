@@ -1,3 +1,4 @@
+from django.db.models import Q
 from producto.models import Producto
 from repository.base_repository import BaseRepository
 
@@ -14,5 +15,5 @@ class ProductoRepository(BaseRepository):
 
     def search(self, query: str):
         return Producto.objects.filter(
-            Q(nombre__icontains=query) | Q(clave__icontains=query)
+            Q(nombre__icontains=query) | Q(clave__icontains=query) | Q(marca__icontains=query)
         ).all()

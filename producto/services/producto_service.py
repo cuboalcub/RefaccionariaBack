@@ -5,10 +5,10 @@ from producto.repositories.tipo_repository import TipoRepository
 from producto.repositories.proveedor_repository import ProveedorRepository
 from producto.repositories.movimiento_repository import MovimientoRepository
 
+
 class ProductoService(BaseService):
     def __init__(self):
         super().__init__(model=Producto, repository=ProductoRepository())
-    
 
     def create(self, data):
         tipo = TipoRepository().get_by_id(data["id_tipo"])
@@ -28,7 +28,6 @@ class ProductoService(BaseService):
         data["id_movimientos"] = movimiento
         return super().update(entity_id, data)
 
-
     def get_all(self, page: int = None, page_size: int = 10):
         """Devuelve productos con paginación opcional."""
         try:
@@ -40,6 +39,7 @@ class ProductoService(BaseService):
                 end = start + page_size
                 instances = all_instances[start:end]
                 import math
+
                 return {
                     "total": total,
                     "page": page,
@@ -64,7 +64,7 @@ class ProductoService(BaseService):
             producto = self.repository.get_by_categoria(categoria)
             if not producto:
                 return None
-            
+
             total = len(producto)
 
             if page is not None:
@@ -72,6 +72,7 @@ class ProductoService(BaseService):
                 end = start + page_size
                 instances = producto[start:end]
                 import math
+
                 return {
                     "total": total,
                     "page": page,
@@ -82,15 +83,45 @@ class ProductoService(BaseService):
 
             return [self._to_dict(i) for i in producto]
         except Exception as e:
-            raise ValueError(f"Error al obtener productos por categoría: {str(e)}") from e
+            raise ValueError(
+                f"Error al obtener productos por categoría: {str(e)}"
+            ) from e
 
+    def search(self, query: str, page: int = None, page_size: int = 10):
+        """Busca productos por nombre o clave con paginación opcional."""
+        try:
+            producto = self.repository.search(query)
+            if not producto:
+                return None
+
+            total = len(producto)
+
+            if page is not None:
+                start = (page - 1) * page_size
+                end = start + page_size
+                instances = producto[start:end]
+                import math
+
+                return {
+                    "total": total,
+                    "page": page,
+                    "page_size": page_size,
+                    "total_pages": math.ceil(total / page_size),
+                    "results": [self._to_dict(i) for i in instances],
+                }
+
+            return [self._to_dict(i) for i in producto]
+        except Exception as e:
+            raise ValueError(f"Error al buscar productos: {str(e)}") from e
 
     def _to_dict(self, instance):
         return {
             "id": instance.id,
             "id_tipo": instance.id_tipo.id if instance.id_tipo else None,
             "id_proveedor": instance.id_proveedor.id if instance.id_proveedor else None,
-            "id_movimientos": instance.id_movimientos.id if instance.id_movimientos else None,
+            "id_movimientos": instance.id_movimientos.id
+            if instance.id_movimientos
+            else None,
             "clave": instance.clave,
             "nombre": instance.nombre,
             "descripcion": instance.descripcion,
@@ -98,8 +129,5 @@ class ProductoService(BaseService):
             "precio_venta": str(instance.precio_venta),
             "marca": instance.marca,
             "existencia": instance.existencia,
-            "costo": str(instance.costo)
+            "costo": str(instance.costo),
         }
-
-
-
