@@ -17,6 +17,7 @@ class ReporteVentasView(APIView):
         tipo = request.query_params.get("tipo")
         year = request.query_params.get("year")
         month = request.query_params.get("month")
+        quincena = request.query_params.get("quincena")
 
         if not tipo:
             return HttpResponse("Debe enviar el parámetro 'tipo'", status=400)
@@ -27,7 +28,8 @@ class ReporteVentasView(APIView):
             reporte = service.generar_reporte(
                 tipo=tipo,
                 year=int(year) if year else None,
-                month=int(month) if month else None
+                month=int(month) if month else None,
+                quincena=int(quincena) if quincena else None
             )
         except ValueError as e:
             return HttpResponse(str(e), status=400)
