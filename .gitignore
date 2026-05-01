@@ -170,3 +170,9 @@ cython_debug/
 #.idea/
 
 # End of https://www.toptal.com/developers/gitignore/api/django
+**/.env
+migrations
+pyrefly.toml
+bruno/*
+venv/
+
