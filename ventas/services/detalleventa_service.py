@@ -1,6 +1,7 @@
 from ventas.models import detalleVenta
 from ventas.repositories.detalleventa_repository import DetalleVentaRepository
 from producto.repositories.producto_repository import ProductoRepository
+from producto.services.producto_service import ProductoService
 from ventas.repositories.ventas_repository import VentaRepository
 from repository.base_service import BaseService
 
@@ -24,6 +25,6 @@ class DetalleVentaService(BaseService):
         venta = venta_repository.get_by_id(data['id_venta'])
         data["id_venta"] = venta
         data["id_producto"] = producto
-        producto_repository.update(producto, {"existencia": producto.existencia - data["cantidad"]})
+        ProductoService().update_stock(producto, producto.existencia - data["cantidad"])
 
         return super().create(data)

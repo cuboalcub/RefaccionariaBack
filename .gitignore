@@ -7,3 +7,10 @@ migrations
 pyrefly.toml
 bruno/*
 venv/
+#OpenSpec
+.openspec/cache/
+.openspec/tmp/
+.openspec/logs/
+.openspec/output/
+
+

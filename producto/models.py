@@ -43,7 +43,10 @@ class Producto(models.Model):
     precio_venta = models.DecimalField(max_digits=10, decimal_places=2)
     marca = models.CharField(max_length=100)
     existencia = models.IntegerField()
+    min_stock = models.IntegerField(default=5, blank=True, null=True)
     costo = models.DecimalField(max_digits=10, decimal_places=2)
     codigoSAT = models.CharField( blank=True, null=True)
     def __str__(self):
         return self.nombre
+
+

@@ -52,4 +52,19 @@ class BaseDetailController(APIView, DetailControllerInterface):
             self.service.delete(pk)
             return Response({"message": "Eliminado exitosamente"}, status=status.HTTP_200_OK)
         except ObjectDoesNotExist:
-            return Response({"error": "No se encontro el registro"}, status=status.HTTP_404_NOT_FOUND)  
+            return Response({"error": "No se encontro el registro"}, status=status.HTTP_404_NOT_FOUND)
+
+    def patch(self, request, pk):
+        try:
+            instance = self.service.repository.get_by_id(pk)
+
+            if not instance:
+                return Response({"error": "No encontrado"}, status=404)
+
+            data = request.data
+            result = self.service.update(instance, data)
+
+            return Response(result, status=200)
+
+        except Exception as e:
+            return Response({"error": str(e)}, status=500)  

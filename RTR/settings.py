@@ -52,6 +52,7 @@ INSTALLED_APPS = [
     'producto',
     'usuario',
     'ventas',
+    'notifications',
     'corsheaders'
 
 ]

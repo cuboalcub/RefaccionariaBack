@@ -15,6 +15,8 @@ class UserService:
         Autentica al usuario y devuelve un JWT (access + refresh).
         """
         user = UserRepository.get_by_username(username)
+        if not user:
+            return None
         if user.check_password(password):
             refresh = RefreshToken.for_user(user)
             return {
@@ -26,7 +28,7 @@ class UserService:
                     "isadmin": user.is_superuser,
                     "isstaff": user.is_staff,
                 }
-        }
+            }
         return None
 
     @staticmethod
