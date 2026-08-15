@@ -1,6 +1,8 @@
 
 from rest_framework.response import Response
 from rest_framework import status
+from rest_framework.views import APIView
+from rest_framework.permissions import IsAuthenticated
 from repository.base_controller import BaseListController
 from repository.base_controller import BaseDetailController
 
@@ -20,9 +22,18 @@ class ProductoListCreateView(BaseListController):
             data = self.service.get_all()
         return Response(data, status=status.HTTP_200_OK)
 
-    def get_by_codigo_barras(self, request):
+
+class ProductoPorCodigoBarrasView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
         codigo_barras = request.query_params.get("codigo_barras")
-        producto = ProductoService.get_producto_by_codigo_barras(codigo_barras)
+        if not codigo_barras:
+            return Response(
+                {"error": "Debe enviar el parámetro codigo_barras"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        producto = ProductoService().get_by_codigo_barras(codigo_barras)
         if producto:
             return Response(producto, status=status.HTTP_200_OK)
         return Response({"error": "Producto no encontrado"}, status=status.HTTP_404_NOT_FOUND)

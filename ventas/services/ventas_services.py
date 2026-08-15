@@ -4,12 +4,15 @@ from ventas.repositories.ventas_repository import VentaRepository
 from usuario.repositories.usuario_repositorie import UserRepository
 from ventas.repositories.metodopago_repository import MetodoPagoRepository
 from repository.base_service import BaseService
-from producto.repositories.producto_repository import ProductoRepository    
+from producto.repositories.producto_repository import ProductoRepository
 
 class VentaService(BaseService):
-    def __init__(self):
-        super().__init__(model=venta, repository=VentaRepository())
-    
+    def __init__(self, venta_repo=None, user_repo=None, metodopago_repo=None, producto_repo=None):
+        super().__init__(model=venta, repository=venta_repo or VentaRepository())
+        self.user_repo = user_repo or UserRepository()
+        self.metodopago_repo = metodopago_repo or MetodoPagoRepository()
+        self.producto_repo = producto_repo or ProductoRepository()
+
     def _to_dict(self, instance):
         return {
             "id": instance.id,
@@ -18,20 +21,23 @@ class VentaService(BaseService):
             "total": str(instance.total),
             "fecha": instance.fecha.isoformat() if instance.fecha else None
         }
-    
+
     def create(self, data):
+        if "id_usuario" not in data or "id_metodoPago" not in data:
+            raise ValueError("Faltan campos obligatorios: id_usuario, id_metodoPago")
 
-        user_repository = UserRepository()
-        user = user_repository.get_by_id(data['id_usuario'])
+        user = self.user_repo.get_by_id(data['id_usuario'])
+        if not user:
+            raise ValueError(f"Usuario con id {data['id_usuario']} no encontrado")
+        metodoPago = self.metodopago_repo.get_by_id(data['id_metodoPago'])
+        if not metodoPago:
+            raise ValueError(f"Metodo de pago con id {data['id_metodoPago']} no encontrado")
 
-        metodoPago_repository = MetodoPagoRepository()
-        metodoPago = metodoPago_repository.get_by_id(data['id_metodoPago'])
-        
         venta_data = {
             "id_usuario": user,
             "id_metodoPago": metodoPago,
-            "total": data.get('total', 0)
+            "total": 0
         }
         venta = super().create(venta_data)
-        
+
         return venta

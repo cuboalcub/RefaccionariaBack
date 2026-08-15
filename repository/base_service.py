@@ -47,7 +47,7 @@ class BaseService(IService):
         except ValidationError as e:
             raise ValueError(f"Error de validación: {e}")
         except Exception as e:
-            raise ValueError(f"Error al crear: {str(e)}")
+            raise ValueError(f"Error al crear: {str(e)}") from e
 
     def get_all(self) -> List[Dict[str, Any]]:
         """Devuelve todas las instancias del modelo"""
@@ -57,7 +57,7 @@ class BaseService(IService):
             return [self._to_dict(instance) for instance in instances]
             
         except Exception as e:
-            raise ValueError(f"Error al obtener todos: {str(e)}")
+            raise ValueError(f"Error al obtener todos: {str(e)}") from e
 
     def get_by_id(self, id: int) -> Dict[str, Any]:
         """Devuelve una instancia por su ID"""
@@ -72,31 +72,22 @@ class BaseService(IService):
         except ObjectDoesNotExist:
             raise ValueError(f"{self.model.__name__} con id {id} no encontrado")
         except Exception as e:
-            raise ValueError(f"Error al obtener por id: {str(e)}")
+            raise ValueError(f"Error al obtener por id: {str(e)}") from e
 
     def update(self, id: int, data: Dict[str, Any]) -> Dict[str, Any]:
         """Actualiza una instancia existente"""
         try:
-
             instance = self.repository.get_by_id(id)
-
-            
             if not instance:
                 raise ObjectDoesNotExist(f"{self.model.__name__} con id {id} no encontrado")
-            
-            # Validar campos únicos si es necesario
-            for key, value in data.items():
-                setattr(instance, key, value)
-            
-            instance.save()
+            instance = self.repository.update(instance, data)
             return self._to_dict(instance)
-            
         except ObjectDoesNotExist:
             raise ValueError(f"{self.model.__name__} con id {id} no encontrado")
         except ValidationError as e:
             raise ValueError(f"Error de validación: {e}")
         except Exception as e:
-            raise ValueError(f"Error al actualizar: {str(e)}")
+            raise ValueError(f"Error al actualizar: {str(e)}") from e
 
     def delete(self, id: int, user: Optional[Any] = None) -> Dict[str, str]:
         """Elimina una instancia por su ID"""
@@ -120,7 +111,7 @@ class BaseService(IService):
         except ObjectDoesNotExist:
             raise ValueError(f"{self.model.__name__} con id {id} no encontrado")
         except Exception as e:
-            raise ValueError(f"Error al eliminar: {str(e)}")
+            raise ValueError(f"Error al eliminar: {str(e)}") from e
 
     # Métodos adicionales útiles
 
@@ -135,7 +126,7 @@ class BaseService(IService):
             return [self._to_dict(instance) for instance in instances]
             
         except Exception as e:
-            raise ValueError(f"Error al filtrar: {str(e)}")
+            raise ValueError(f"Error al filtrar: {str(e)}") from e
 
     def exists(self, id: int) -> bool:
         """Verifica si una instancia existe"""
@@ -144,7 +135,7 @@ class BaseService(IService):
                 return self.repository.exists(id)
             return self.model.objects.filter(id=id).exists()
         except Exception as e:
-            raise ValueError(f"Error al verificar existencia: {str(e)}")
+            raise ValueError(f"Error al verificar existencia: {str(e)}") from e
 
     def count(self, filters: Optional[Dict[str, Any]] = None) -> int:
         """Cuenta las instancias que coinciden con los filtros"""
@@ -155,4 +146,4 @@ class BaseService(IService):
                 return self.model.objects.filter(**filters).count()
             return self.model.objects.count()
         except Exception as e:
-            raise ValueError(f"Error al contar: {str(e)}")
+            raise ValueError(f"Error al contar: {str(e)}") from e

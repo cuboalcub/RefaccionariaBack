@@ -29,4 +29,9 @@ urlpatterns = [
     path('api/', include('usuario.urls')),
     path('api/', include('producto.urls')),
     path('api/', include('ventas.urls')),
-] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+    path('api/', include('sucursales.urls')),
+    path('api/', include('inventario.urls')),
+]
+
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

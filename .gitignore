@@ -3,7 +3,9 @@ db.sqlite3
 __pycache__
 .venv
 **/.env
-migrations
 pyrefly.toml
 bruno/*
 venv/
+graphify-out/
+bruno/
+bruno-collection/
