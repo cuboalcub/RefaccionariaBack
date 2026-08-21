@@ -56,6 +56,7 @@ INSTALLED_APPS = [
     "ventas",
     "sucursales",
     "inventario",
+    "clientes",
     "corsheaders",
 ]
 
