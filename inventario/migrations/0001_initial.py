@@ -9,7 +9,7 @@ class Migration(migrations.Migration):
     initial = True
 
     dependencies = [
-        ('producto', '0003_proveedor_surtir_delete_movimiento'),
+        ('producto', '0002_initial'),
         ('sucursales', '0001_initial'),
     ]
 
