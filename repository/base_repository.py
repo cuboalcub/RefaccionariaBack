@@ -24,20 +24,16 @@ class BaseRepository(IRepository[models.Model]):
         return self.model_class.objects.create(**data)
 
     def update(self, entity: models.Model, data: Dict[str, Any]):
-        try:
-            for key, value in data.items():
-                setattr(entity, key, value)
-            entity.save()
-            return entity
-        except ObjectDoesNotExist:
-            return None
+        for key, value in data.items():
+            setattr(entity, key, value)
+        entity.save()
+        return entity
 
     def delete(self, entity: models.Model) -> bool:
-        try:
-            entity.delete()
-            return True
-        except ObjectDoesNotExist:
+        if not self.get_by_id(entity.pk):
             return False
+        entity.delete()
+        return True
 
     def filter(self,    data: Dict[str, Any]) -> List[models.Model]:
         return list(self.model_class.objects.filter(**data))

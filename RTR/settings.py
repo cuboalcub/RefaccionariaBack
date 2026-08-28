@@ -21,19 +21,21 @@ from datetime import timedelta
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-load_dotenv()
+load_dotenv(BASE_DIR / ".env")
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-
-
-SECRET_KEY = os.getenv("SECRET_KEY", "refaccionaria_secreta")
+SECRET_KEY = os.getenv("SECRET_KEY")
+if not SECRET_KEY and os.getenv("DEBUG", "False") == "True":
+    SECRET_KEY = "dev_insecure_secret_key"
+if not SECRET_KEY:
+    raise RuntimeError("SECRET_KEY must be set in the environment for non-debug deployments")
 
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.getenv("DEBUG", "False") == "True"
 
 ALLOWED_HOSTS = [
     "refaccionariaback.onrender.com",
@@ -55,16 +57,23 @@ INSTALLED_APPS = [
     "producto",
     "usuario",
     "ventas",
+    "sucursales",
+    "inventario",
+    "clientes",
     "corsheaders",
 ]
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
         "rest_framework_simplejwt.authentication.JWTAuthentication",
-    )
+    ),
+    "DEFAULT_PERMISSION_CLASSES": (
+        "rest_framework.permissions.IsAuthenticated",
+    ),
 }
 
 MIDDLEWARE = [
+    "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -72,8 +81,6 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
-    "corsheaders.middleware.CorsMiddleware",
-    "django.middleware.common.CommonMiddleware",
 ]
 
 ROOT_URLCONF = "RTR.urls"
@@ -95,7 +102,7 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "RTR.wsgi.application"
 
-APPEND_SLASH = True
+
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 if os.getenv("DATABASE_URL"):
@@ -111,7 +118,6 @@ else:
             "NAME": BASE_DIR / "db.sqlite3",
         }
     }
-print(DATABASES)
 
 # DATABASES = {
 #     'default': {
@@ -163,7 +169,12 @@ MEDIA_ROOT = BASE_DIR / "media"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-CORS_ALLOW_ALL_ORIGINS = True  # ⚠️ No usar en producción
+CORS_ALLOW_ALL_ORIGINS = False  # ⚠️ No usar en producción
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:5173",
+    "http://localhost:3000",
+    "https://refaccionariaback.onrender.com",
+]
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_HEADERS = [
     "accept",
@@ -185,9 +196,3 @@ CORS_ALLOW_METHODS = [
     "POST",
     "PUT",
 ]
-
-
-SIMPLE_JWT = {
-    "ACCESS_TOKEN_LIFETIME": timedelta(hours=12),
-    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
-}

@@ -1,3 +1,7 @@
 from django.contrib import admin
+from ventas.models import metodoPago, venta, detalleVenta, Reporte
 
-# Register your models here.
+admin.site.register(metodoPago)
+admin.site.register(venta)
+admin.site.register(detalleVenta)
+admin.site.register(Reporte)

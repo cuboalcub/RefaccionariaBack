@@ -5,60 +5,48 @@ from ventas.repositories.ventas_repository import VentaRepository
 from usuario.repositories.usuario_repositorie import UserRepository
 from ventas.repositories.metodopago_repository import MetodoPagoRepository
 from repository.base_service import BaseService
-from producto.repositories.producto_repository import ProductoRepository    
+from producto.repositories.producto_repository import ProductoRepository
+from inventario.models import Inventario
 
 class VentaService(BaseService):
-    def __init__(self):
-        super().__init__(model=venta, repository=VentaRepository())
-    
+    def __init__(self, venta_repo=None, user_repo=None, metodopago_repo=None, producto_repo=None):
+        super().__init__(model=venta, repository=venta_repo or VentaRepository())
+        self.user_repo = user_repo or UserRepository()
+        self.metodopago_repo = metodopago_repo or MetodoPagoRepository()
+        self.producto_repo = producto_repo or ProductoRepository()
+
     def _to_dict(self, instance):
         return {
             "id": instance.id,
             "id_usuario": instance.id_usuario.id if instance.id_usuario else None,
             "id_metodoPago": instance.id_metodoPago.id if instance.id_metodoPago else None,
+            "id_inventario": instance.id_inventario.id if instance.id_inventario else None,
             "total": str(instance.total),
             "fecha": instance.fecha.isoformat() if instance.fecha else None
         }
-    
+
     def create(self, data):
-        # Repositorios y servicios necesarios
-        user_repository = UserRepository()
-        metodo_pago_repository = MetodoPagoRepository()
-        producto_repository = ProductoRepository()
-        detalle_venta_service = DetalleVentaService()
+        if "id_usuario" not in data or "id_metodoPago" not in data:
+            raise ValueError("Faltan campos obligatorios: id_usuario, id_metodoPago")
+        if "id_inventario" not in data or data["id_inventario"] is None:
+            raise ValueError("Faltan campos obligatorios: id_inventario")
 
-        # Obtener instancias de usuario y método de pago para la venta
-        user = user_repository.get_by_id(data['id_usuario'])
-        metodo_pago = metodo_pago_repository.get_by_id(data['id_metodoPago'])
-        
-        # Primero calculamos el total recorriendo los productos
-        total = Decimal("0")
-        for item in data['productos']:
-            producto_db = producto_repository.get_by_id(item['id'])
-            if producto_db.existencia < item['cantidad']:
-                raise ValueError("No hay suficiente stock para la venta")
-            existencia = producto_db.existencia - item['cantidad']
-            producto_repository.update(producto_db, {"existencia": existencia})
-            total += (producto_db.precio_venta * item['cantidad']) * Decimal("1.16")
+        user = self.user_repo.get_by_id(data['id_usuario'])
+        if not user:
+            raise ValueError(f"Usuario con id {data['id_usuario']} no encontrado")
+        metodoPago = self.metodopago_repo.get_by_id(data['id_metodoPago'])
+        if not metodoPago:
+            raise ValueError(f"Metodo de pago con id {data['id_metodoPago']} no encontrado")
+        inventario = Inventario.objects.filter(id=data['id_inventario']).first()
+        if not inventario:
+            raise ValueError(f"Inventario con id {data['id_inventario']} no encontrado")
 
-        # Preparamos los datos para crear la venta
         venta_data = {
             "id_usuario": user,
-            "id_metodoPago": metodo_pago,
-            "total": total
+            "id_metodoPago": metodoPago,
+            "id_inventario": inventario,
+            "total": 0
         }
-        
-        # Creamos la venta primero para obtener su ID
-        # super().create retorna un diccionario con los datos de la venta creada
-        venta_dict = super().create(venta_data)
-        venta_id = venta_dict['id']
+        venta = super().create(venta_data)
 
-        # Ahora creamos los detalles de la venta usando el ID de la venta recién creada
-        for item in data['productos']:
-            detalle_venta_service.create({
-                "id_producto": item['id'],
-                "id_venta": venta_id,
-                "cantidad": item['cantidad']
-            })
-        
-        return venta_dict
+        return venta

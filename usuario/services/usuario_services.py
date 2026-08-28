@@ -1,102 +1,82 @@
-# users/services/user_service.py
+from django.contrib.auth.models import User
 
 from usuario.repositories.usuario_repositorie import UserRepository
-from django.core.exceptions import ValidationError
-from django.contrib.auth import authenticate
+from usuario.models import Perfil
 from rest_framework_simplejwt.tokens import RefreshToken
+from repository.base_service import BaseService
+from sucursales.models import Sucursal
 
 
+class UserService(BaseService):
 
-class UserService:
-    """
-    Service class for user-related business logic and repository interaction.
-    """
+    def __init__(self, repository=None):
+        super().__init__(model=User, repository=repository or UserRepository())
 
-
-    @staticmethod
-    def login(username, password):
-        """
-        Autentica al usuario y devuelve un JWT (access + refresh).
-        """
-        try:
-            user = UserRepository.get_by_username(username)
-            if not user:
-                raise ValueError("Usuario no encontrado")
-            if user.check_password(password):
-                refresh = RefreshToken.for_user(user)
-                return {
-                    "refresh": str(refresh),
-                    "access": str(refresh.access_token),
-                    "user": {
-                        "id": user.id,
-                        "username": user.username,
-                        "isadmin": user.is_superuser,
-                        "isstaff": user.is_staff,
-                    }
+    def login(self, username, password):
+        user = self.repository.get_by_username(username)
+        if user and user.check_password(password):
+            refresh = RefreshToken.for_user(user)
+            return {
+                "refresh": str(refresh),
+                "access": str(refresh.access_token),
+                "user": {
+                    "id": user.id,
+                    "username": user.username,
+                    "isadmin": user.is_superuser,
+                    "isstaff": user.is_staff,
+                }
             }
-            raise ValueError("Credenciales inválidas")
-        except Exception as e:
-            raise ValueError(f"Error al iniciar sesión: {str(e)}") from e
+        return None
 
-    @staticmethod
-    def create_user(user_data):
-        """
-        Lógica para crear un nuevo usuario.
-        user_data debería ser un diccionario con los campos necesarios.
-        """
+    def create_user(self, user_data):
         if 'username' not in user_data or 'password' not in user_data:
             raise ValueError("Faltan campos obligatorios: username y password")
-        existing_user = UserRepository.get_by_username(user_data['username'])
+        existing_user = self.repository.get_by_username(user_data['username'])
         if existing_user:
             raise ValueError("El nombre de usuario ya existe")
-        user = UserRepository.create(user_data)
-        return UserService._to_dict(user)
-    
-    @staticmethod
-    def get_all_users():
-        """
-        Devuelve una lista de todos los usuarios.
-        """
-        users = UserRepository.get_all()
-        return [UserService._to_dict(user) for user in users]
 
-    @staticmethod
-    def get_user_by_id(user_id):
-        """
-        Obtiene un usuario por su ID.
-        """
-        user = UserRepository.get_by_id(user_id)
-        return UserService._to_dict(user)
+        id_sucursal = user_data.pop('id_sucursal', None)
+        user = self.repository.create(user_data)
 
-    @staticmethod
-    def update_user(user_id, user_data):
-        """
-        Actualiza un usuario existente.
-        """
-        user = UserRepository.update(user_id, user_data)
-        return UserService._to_dict(user)
+        if id_sucursal:
+            if not Sucursal.objects.filter(id=id_sucursal).exists():
+                user.delete()
+                raise ValueError("La sucursal indicada no existe")
+            Perfil.objects.create(usuario=user, id_sucursal=Sucursal.objects.get(id=id_sucursal))
 
-    @staticmethod
-    def delete_user(user_id):
-        """
-        Elimina un usuario por su ID.
-        """
-        return UserRepository.delete(user_id)
+        return self._to_dict(user)
 
-    @staticmethod
-    def get_by_id(username):
-        """
-        Obtiene un usuario por su nombre de usuario.
-        """
-        user = UserRepository.get_by_username(username)
-        return user
+    def get_all_users(self):
+        return self.get_all()
 
+    def get_user_by_id(self, user_id):
+        user = self.repository.get_by_id(user_id)
+        return self._to_dict(user)
 
-    @staticmethod
-    def _to_dict(user):
-        """
-        Convierte un modelo User en dict serializable.
-        """
+    def update_user(self, user_id, user_data):
+        user = self.repository.get_by_id(user_id)
+        if not user:
+            return None
+
+        editable_fields = {"username", "email", "first_name", "last_name", "is_active", "password"}
+        for key, value in user_data.items():
+            if key not in editable_fields:
+                continue
+            if key == "password":
+                user.set_password(value)
+            else:
+                setattr(user, key, value)
+        user.save()
+        return self._to_dict(user)
+
+    def delete_user(self, user_id):
+        user = self.repository.get_by_id(user_id)
+        if not user:
+            return False
+        user.delete()
+        return True
+
+    def _to_dict(self, user):
         if not user:
             return None
         return {
@@ -105,4 +85,3 @@ class UserService:
             "email": user.email,
             "is_active": user.is_active,
         }
-

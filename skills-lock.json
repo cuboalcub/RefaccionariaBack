@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "bruno-collection-generator": {
+      "source": "patricio0312rev/skills",
+      "sourceType": "github",
+      "skillPath": "testing/bruno-collection-generator/SKILL.md",
+      "computedHash": "022ba232d7e074dd9bdc7f8163c71262f8cc6565f10b8a2620c27725e1f91915"
+    }
+  }
+}

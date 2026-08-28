@@ -1,6 +1,7 @@
 from django.db import models
 from django.contrib.auth.models import User
 from producto.models import Producto
+from inventario.models import Inventario
 # Create your models here.
 class metodoPago(models.Model):
     id = models.AutoField(primary_key=True)
@@ -12,6 +13,7 @@ class venta(models.Model):
     id = models.AutoField(primary_key=True)
     id_usuario = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
     id_metodoPago = models.ForeignKey(metodoPago, on_delete=models.SET_NULL, null=True)
+    id_inventario = models.ForeignKey(Inventario, on_delete=models.SET_NULL, null=True)
     total = models.DecimalField(max_digits=10, decimal_places=2)
     fecha = models.DateTimeField(auto_now_add=True)
     

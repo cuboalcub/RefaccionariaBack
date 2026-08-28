@@ -171,11 +171,9 @@ cython_debug/
 
 # End of https://www.toptal.com/developers/gitignore/api/django
 **/.env
-migrations
 pyrefly.toml
 bruno/*
 venv/
-
-bruno-collection/
-bruno/
 graphify-out/
+bruno/
+bruno-collection/
