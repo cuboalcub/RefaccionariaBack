@@ -27,8 +27,8 @@ class Producto(models.Model):
     codigo_barras = models.CharField(max_length=100)  
     precio_venta = models.DecimalField(max_digits=10, decimal_places=2)
     marca = models.CharField(max_length=100)
-    existencia = models.IntegerField()
     costo = models.DecimalField(max_digits=10, decimal_places=2)
     codigoSAT = models.CharField(max_length=50, blank=True, null=True)
+    
     def __str__(self):
         return self.nombre

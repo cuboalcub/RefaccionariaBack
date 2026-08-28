@@ -1,8 +1,10 @@
 from django.contrib.auth.models import User
 
 from usuario.repositories.usuario_repositorie import UserRepository
+from usuario.models import Perfil
 from rest_framework_simplejwt.tokens import RefreshToken
 from repository.base_service import BaseService
+from sucursales.models import Sucursal
 
 
 class UserService(BaseService):
@@ -32,7 +34,16 @@ class UserService(BaseService):
         existing_user = self.repository.get_by_username(user_data['username'])
         if existing_user:
             raise ValueError("El nombre de usuario ya existe")
+
+        id_sucursal = user_data.pop('id_sucursal', None)
         user = self.repository.create(user_data)
+
+        if id_sucursal:
+            if not Sucursal.objects.filter(id=id_sucursal).exists():
+                user.delete()
+                raise ValueError("La sucursal indicada no existe")
+            Perfil.objects.create(usuario=user, id_sucursal=Sucursal.objects.get(id=id_sucursal))
+
         return self._to_dict(user)
 
     def get_all_users(self):

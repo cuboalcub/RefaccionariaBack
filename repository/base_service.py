@@ -1,7 +1,9 @@
 from typing import List, Optional, Type, Dict, Any
+from decimal import Decimal
 from django.db import models
 from django.core.exceptions import ObjectDoesNotExist, ValidationError
 from interfaces.service import IService
+from repository.exceptions import NotFoundError
 
 
 class BaseService(IService):
@@ -27,13 +29,21 @@ class BaseService(IService):
                 raise ValueError(f"Faltan campos obligatorios: {field}")
 
     def _to_dict(self, instance: models.Model) -> Dict[str, Any]:
-        """Convierte una instancia del modelo a diccionario"""
+        """Convierte una instancia del modelo a diccionario serializable.
+
+        Usa field.attname para que las FKs devuelvan el id crudo (sin instancias
+        ni queries extra) y serializa Decimal/datetime a tipos JSON-safe.
+        """
         if not instance:
             return {}
-        
+
         result = {}
         for field in instance._meta.fields:
-            value = getattr(instance, field.name)
+            value = getattr(instance, field.attname)
+            if isinstance(value, Decimal):
+                value = str(value)
+            elif hasattr(value, "isoformat"):
+                value = value.isoformat()
             result[field.name] = value
         return result
 
@@ -65,12 +75,14 @@ class BaseService(IService):
             instance = self.repository.get_by_id(id)
             
             if not instance:
-                raise ObjectDoesNotExist(f"{self.model.__name__} con id {id} no encontrado")
-            
+                raise NotFoundError(f"{self.model.__name__} con id {id} no encontrado")
+
             return self._to_dict(instance)
-            
+
         except ObjectDoesNotExist:
-            raise ValueError(f"{self.model.__name__} con id {id} no encontrado")
+            raise NotFoundError(f"{self.model.__name__} con id {id} no encontrado")
+        except NotFoundError:
+            raise
         except Exception as e:
             raise ValueError(f"Error al obtener por id: {str(e)}") from e
 
@@ -79,13 +91,15 @@ class BaseService(IService):
         try:
             instance = self.repository.get_by_id(id)
             if not instance:
-                raise ObjectDoesNotExist(f"{self.model.__name__} con id {id} no encontrado")
+                raise NotFoundError(f"{self.model.__name__} con id {id} no encontrado")
             instance = self.repository.update(instance, data)
             return self._to_dict(instance)
         except ObjectDoesNotExist:
-            raise ValueError(f"{self.model.__name__} con id {id} no encontrado")
+            raise NotFoundError(f"{self.model.__name__} con id {id} no encontrado")
         except ValidationError as e:
             raise ValueError(f"Error de validación: {e}")
+        except NotFoundError:
+            raise
         except Exception as e:
             raise ValueError(f"Error al actualizar: {str(e)}") from e
 
@@ -98,18 +112,20 @@ class BaseService(IService):
                 instance = self.model.objects.get(id=id)
             
             if not instance:
-                raise ObjectDoesNotExist(f"{self.model.__name__} con id {id} no encontrado")
-            
+                raise NotFoundError(f"{self.model.__name__} con id {id} no encontrado")
+
             # Opcional: registro de quién eliminó (si se proporciona user)
             if user:
                 # Aquí podrías agregar lógica de auditoría
                 pass
-            
+
             instance.delete()
             return {"message": f"{self.model.__name__} eliminado exitosamente"}
-            
+
         except ObjectDoesNotExist:
-            raise ValueError(f"{self.model.__name__} con id {id} no encontrado")
+            raise NotFoundError(f"{self.model.__name__} con id {id} no encontrado")
+        except NotFoundError:
+            raise
         except Exception as e:
             raise ValueError(f"Error al eliminar: {str(e)}") from e
 

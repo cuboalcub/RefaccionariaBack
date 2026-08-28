@@ -27,7 +27,7 @@ FRAMEWORK_ROUTES = [
             "password": "password123",
         },
         "docs": "Autentica al usuario y devuelve tokens refresh/access. Guarda el access token en {{token}} automáticamente.",
-        "post_response": 'if (res.body.access) {\n  bru.setEnvVar("token", res.body.access);\n}',
+        "post_response": 'if (res.body.access) {\n  bru.setEnvVar("token", res.body.access);\n}\nif (res.body.refresh) {\n  bru.setEnvVar("refresh_token", res.body.refresh);\n}',
     },
     {
         "folder": "Auth",
@@ -37,7 +37,7 @@ FRAMEWORK_ROUTES = [
         "auth": False,
         "query": [],
         "body": {
-            "refresh": "{{token}}",
+            "refresh": "{{refresh_token}}",
         },
         "docs": "Renueva el access token usando el refresh token.",
     },
@@ -54,8 +54,9 @@ FRAMEWORK_ROUTES = [
             "first_name": "Nombre",
             "last_name": "Apellido",
             "password": "clave_segura",
+            "id_sucursal": 1,
         },
-        "docs": "Registra un nuevo usuario (público, no requiere token).",
+        "docs": "Registra un nuevo usuario (público, no requiere token). Si envía id_sucursal, se crea su Perfil con esa sucursal.",
     },
     # ---- Usuarios ----
     {
@@ -81,8 +82,9 @@ FRAMEWORK_ROUTES = [
             "first_name": "Nombre",
             "last_name": "Apellido",
             "password": "clave_segura",
+            "id_sucursal": 1,
         },
-        "docs": "Registra un nuevo usuario (público, no requiere token).",
+        "docs": "Registra un nuevo usuario (público, no requiere token). Si envía id_sucursal, se crea su Perfil con esa sucursal.",
     },
     {
         "folder": "Usuarios",
@@ -130,7 +132,7 @@ FRAMEWORK_ROUTES = [
         "auth": True,
         "query": [],
         "body": None,
-        "docs": "Devuelve todos los productos.",
+        "docs": "Devuelve todos los productos. Sin sucursal_id devuelve catálogo global.",
     },
     {
         "folder": "Productos",
@@ -141,6 +143,26 @@ FRAMEWORK_ROUTES = [
         "query": [("page", "1"), ("page_size", "10")],
         "body": None,
         "docs": "Devuelve productos paginados con los parámetros page y page_size.",
+    },
+    {
+        "folder": "Productos",
+        "name": "Listar Productos por Sucursal",
+        "method": "GET",
+        "path": "/api/productos/",
+        "auth": True,
+        "query": [("sucursal_id", "1"), ("page", "1"), ("page_size", "10"), ("search", "Filtro")],
+        "body": None,
+        "docs": "Devuelve solo productos con stock>0 en la sucursal indicada (filtra por DetalleInventario). Enriquece cada producto con precio_sucursal (null si no hay PrecioSucursal activo), vigente_desde, cantidad y id_sucursal. Soporta filtros search, clave, marca, codigo_barras, tipo_id, proveedor_id y paginación page/page_size.",
+    },
+    {
+        "folder": "Productos",
+        "name": "Listar Productos por Sucursal Filtrado",
+        "method": "GET",
+        "path": "/api/productos/",
+        "auth": True,
+        "query": [("sucursal_id", "1"), ("marca", "Bosch"), ("clave", "CLV")],
+        "body": None,
+        "docs": "Ejemplo de filtros por marca/clave/codigo_barras/tipo_id/proveedor_id combinado con sucursal_id. Solo stock>0.",
     },
     {
         "folder": "Productos",
@@ -168,11 +190,10 @@ FRAMEWORK_ROUTES = [
             "codigo_barras": "7501234567890",
             "precio_venta": 599.99,
             "marca": "Bosch",
-            "existencia": 50,
             "costo": 350.00,
             "codigoSAT": "84111500",
         },
-        "docs": "Crea un producto. NO incluye id_movimientos; el inventario se gestiona con movimientos.",
+        "docs": "Crea un producto. El stock no se guarda aquí; se gestiona vía DetalleInventario (movimientos).",
     },
     {
         "folder": "Productos",
@@ -200,11 +221,10 @@ FRAMEWORK_ROUTES = [
             "codigo_barras": "7501234567890",
             "precio_venta": 699.99,
             "marca": "Bosch",
-            "existencia": 45,
             "costo": 350.00,
             "codigoSAT": "84111500",
         },
-        "docs": "Actualiza los datos de un producto.",
+        "docs": "Actualiza los datos de un producto. El stock se gestiona vía DetalleInventario, no aquí.",
     },
     {
         "folder": "Productos",
@@ -390,6 +410,16 @@ FRAMEWORK_ROUTES = [
     # ---- Inventario ----
     {
         "folder": "Inventario",
+        "name": "Inventario de mi Sucursal",
+        "method": "GET",
+        "path": "/api/inventarios/mi-sucursal/",
+        "auth": True,
+        "query": [],
+        "body": None,
+        "docs": "Devuelve el inventario (agrupado por inventario con detalles de producto) de la sucursal del usuario autenticado. Incluye productos con stock 0 y enriquece cada detalle con precio_sucursal (null si no hay PrecioSucursal activo), vigente_desde y precio_base. 400 si el usuario no tiene sucursal asignada.",
+    },
+    {
+        "folder": "Inventario",
         "name": "Listar Inventarios",
         "method": "GET",
         "path": "/api/inventarios/",
@@ -530,7 +560,59 @@ FRAMEWORK_ROUTES = [
             "id_movimiento": 1,
             "cantidad": 10,
         },
-        "docs": "Crea un detalle de inventario y ajusta el stock del producto según el tipo de movimiento.",
+        "docs": "Crea un detalle de inventario (requiere id_movimiento existente) y ajusta el stock según el tipo del movimiento.",
+    },
+    {
+        "folder": "DetallesInventario",
+        "name": "Crear Detalle de Inventario (Auto Movimiento)",
+        "method": "POST",
+        "path": "/api/detalles-inventario/",
+        "auth": True,
+        "query": [],
+        "body": {
+            "id_producto": 1,
+            "id_inventario": 1,
+            "cantidad": 10,
+            "tipo_movimiento": "ENTRADA",
+            "razon": "Compra a proveedor",
+            "observaciones": "Factura 1234",
+        },
+        "docs": "Crea un detalle de inventario con MovimientoInventario automático (sin id_movimiento). Si no se envía id_movimiento, se crea un Movimiento con tipo_movimiento/tipo (ENTRADA/SALIDA, default ENTRADA), razon (default 'Ajuste manual'), observaciones y cantidad. Soporta también id_proveedor opcional.",
+    },
+    {
+        "folder": "DetallesInventario",
+        "name": "Crear Detalles de Inventario Bulk",
+        "method": "POST",
+        "path": "/api/detalles-inventario/bulk/",
+        "auth": True,
+        "query": [],
+        "body": {
+            "id_inventario": 1,
+            "id_movimiento": 1,
+            "items": [
+                {"id_producto": 1, "cantidad": 5},
+                {"id_producto": 2, "cantidad": 7},
+            ],
+        },
+        "docs": "Crea múltiples detalles de inventario en una transacción atómica (requiere id_movimiento común). Formatos: {id_inventario, id_movimiento, items:[...]} o lista plana [{id_producto, id_inventario, id_movimiento, cantidad}]. Valida stock para SALIDA.",
+    },
+    {
+        "folder": "DetallesInventario",
+        "name": "Crear Detalles de Inventario Bulk (Auto Movimiento)",
+        "method": "POST",
+        "path": "/api/detalles-inventario/bulk/",
+        "auth": True,
+        "query": [],
+        "body": {
+            "id_inventario": 1,
+            "tipo_movimiento": "ENTRADA",
+            "razon": "Compra bulk",
+            "items": [
+                {"id_producto": 1, "cantidad": 5},
+                {"id_producto": 2, "cantidad": 7},
+            ],
+        },
+        "docs": "Crea múltiples detalles con Movimiento automático. Sin id_movimiento, usa tipo_movimiento/razon/observaciones comunes (o por item). Si hay tipo_movimiento común, crea un único Movimiento compartido con cantidad=sum(items); si no, crea uno por item. Atómico.",
     },
     {
         "folder": "DetallesInventario",
@@ -567,6 +649,86 @@ FRAMEWORK_ROUTES = [
         "query": [],
         "body": None,
         "docs": "Elimina un detalle de inventario y restituye el stock del producto.",
+    },
+    # ---- Precios Sucursal ----
+    {
+        "folder": "PreciosSucursal",
+        "name": "Listar Precios por Sucursal",
+        "method": "GET",
+        "path": "/api/precios-sucursal/",
+        "auth": True,
+        "query": [],
+        "body": None,
+        "docs": "Devuelve todos los precios por sucursal. Cada registro tiene id_producto, id_sucursal, precio_venta, vigente_desde, activo (solo un activo por producto+sucursal).",
+    },
+    {
+        "folder": "PreciosSucursal",
+        "name": "Crear Precio por Sucursal",
+        "method": "POST",
+        "path": "/api/precios-sucursal/",
+        "auth": True,
+        "query": [],
+        "body": {
+            "id_producto": 1,
+            "id_sucursal": 1,
+            "precio_venta": "99.99",
+            "vigente_desde": "2026-08-27T00:00:00Z",
+            "activo": True,
+        },
+        "docs": "Crea un precio por sucursal. Si activo=true, desactiva el precio activo previo del mismo producto+sucursal. vigente_desde editable, default now. precio_venta >0.",
+    },
+    {
+        "folder": "PreciosSucursal",
+        "name": "Obtener Precio por Sucursal",
+        "method": "GET",
+        "path": "/api/precios-sucursal/{{precioId}}/",
+        "auth": True,
+        "query": [],
+        "body": None,
+        "docs": "Devuelve un precio por sucursal por su id.",
+    },
+    {
+        "folder": "PreciosSucursal",
+        "name": "Precio Activo por Producto y Sucursal",
+        "method": "GET",
+        "path": "/api/precios-sucursal/activo/",
+        "auth": True,
+        "query": [("id_producto", "1"), ("id_sucursal", "1")],
+        "body": None,
+        "docs": "Devuelve el precio activo para un producto en una sucursal. 404 si no hay. Query: id_producto, id_sucursal.",
+    },
+    {
+        "folder": "PreciosSucursal",
+        "name": "Historial Precios por Producto y Sucursal",
+        "method": "GET",
+        "path": "/api/precios-sucursal/historial/",
+        "auth": True,
+        "query": [("id_producto", "1"), ("id_sucursal", "1")],
+        "body": None,
+        "docs": "Devuelve historial de precios (orden vigente_desde desc) para un producto+sucursal. Query: id_producto, id_sucursal.",
+    },
+    {
+        "folder": "PreciosSucursal",
+        "name": "Actualizar Precio por Sucursal",
+        "method": "PUT",
+        "path": "/api/precios-sucursal/{{precioId}}/",
+        "auth": True,
+        "query": [],
+        "body": {
+            "precio_venta": "109.99",
+            "activo": True,
+        },
+        "docs": "Actualiza un precio por sucursal. Si se activa, desactiva el otro activo del mismo producto+sucursal.",
+    },
+    {
+        "folder": "PreciosSucursal",
+        "name": "Eliminar Precio por Sucursal",
+        "method": "DELETE",
+        "path": "/api/precios-sucursal/{{precioId}}/",
+        "auth": True,
+        "query": [],
+        "body": None,
+        "docs": "Elimina un precio por sucursal por su id.",
     },
     # ---- Perfil ----
     {
@@ -669,8 +831,9 @@ FRAMEWORK_ROUTES = [
         "body": {
             "id_usuario": 1,
             "id_metodoPago": 1,
+            "id_inventario": 1,
         },
-        "docs": "Crea una venta con total 0. El total se calcula sumando los subtotales de sus detalles.",
+        "docs": "Crea una venta con total 0 y el inventario del que se descontará stock. El total se calcula sumando los subtotales de sus detalles.",
     },
     {
         "folder": "Ventas",
@@ -692,8 +855,9 @@ FRAMEWORK_ROUTES = [
         "body": {
             "id_usuario": 1,
             "id_metodoPago": 2,
+            "id_inventario": 1,
         },
-        "docs": "Actualiza usuario y método de pago de una venta. El total se recalcula desde los detalles.",
+        "docs": "Actualiza usuario, método de pago e inventario de una venta. El total se recalcula desde los detalles.",
     },
     {
         "folder": "Ventas",
@@ -710,7 +874,7 @@ FRAMEWORK_ROUTES = [
         "folder": "DetalleVenta",
         "name": "Listar Detalles",
         "method": "GET",
-        "path": "/api/detalle/",
+        "path": "/api/detalleventa/",
         "auth": True,
         "query": [],
         "body": None,
@@ -720,22 +884,21 @@ FRAMEWORK_ROUTES = [
         "folder": "DetalleVenta",
         "name": "Crear Detalle",
         "method": "POST",
-        "path": "/api/detalle/",
+        "path": "/api/detalleventa/",
         "auth": True,
         "query": [],
         "body": {
             "id_producto": 1,
             "id_venta": 1,
             "cantidad": 1,
-            "subtotal": 599.99,
         },
-        "docs": "Crea un detalle de venta, descuenta stock del producto y recalcula el total de la venta.",
+        "docs": "Crea un detalle de venta, valida que el producto tenga stock>0 en el inventario/sucursal de la venta y que el usuario pertenezca a la misma sucursal (bloqueo cross-sucursal; staff bypass), registra una salida automática (MovimientoInventario SALIDA + DetalleInventario con id_detalle_venta) y recalcula el total. Error 400 si producto no está en inventario (stock 0) o cross-sucursal.",
     },
     {
         "folder": "DetalleVenta",
         "name": "Obtener Detalle",
         "method": "GET",
-        "path": "/api/detalle/{{detalleId}}/",
+        "path": "/api/detalleventa/{{detalleId}}/",
         "auth": True,
         "query": [],
         "body": None,
@@ -745,22 +908,21 @@ FRAMEWORK_ROUTES = [
         "folder": "DetalleVenta",
         "name": "Actualizar Detalle",
         "method": "PUT",
-        "path": "/api/detalle/{{detalleId}}/",
+        "path": "/api/detalleventa/{{detalleId}}/",
         "auth": True,
         "query": [],
         "body": {
             "id_producto": 1,
             "id_venta": 1,
             "cantidad": 3,
-            "subtotal": 1799.97,
         },
-        "docs": "Actualiza un detalle, ajusta el stock del producto y recalcula el total de la venta.",
+        "docs": "Actualiza un detalle, ajusta la salida en el inventario de la venta y recalcula el total. El subtotal se calcula en el servidor como precio_venta * cantidad.",
     },
     {
         "folder": "DetalleVenta",
         "name": "Eliminar Detalle",
         "method": "DELETE",
-        "path": "/api/detalle/{{detalleId}}/",
+        "path": "/api/detalleventa/{{detalleId}}/",
         "auth": True,
         "query": [],
         "body": None,
@@ -858,10 +1020,12 @@ def write_environments(envs_dir: pathlib.Path) -> None:
             f"vars {{\n"
             f"  base_url: {env['base_url']}\n"
             f"  token:\n"
+            f"  refresh_token:\n"
             f"}}\n"
             f"\n"
             f"vars:secret [\n"
             f"  token\n"
+            f"  refresh_token\n"
             f"]\n"
         )
         with open(envs_dir / f'{env["name"]}.bru', "w", encoding="utf-8") as f:
@@ -910,8 +1074,15 @@ def generate_bru(route: dict, seq: int) -> str:
     lines.append("")
 
     if route["body"] is not None:
+        body = json.dumps(route["body"], indent=2, ensure_ascii=False)
+        body_lines = body.split("\n")
         lines.append("body:json {")
-        lines.append(json.dumps(route["body"], indent=2, ensure_ascii=False))
+        if len(body_lines) == 1:
+            lines.append(body)
+        else:
+            lines.append("{" + "  " + body_lines[1].strip())
+            lines.extend(body_lines[2:-2])
+            lines.append(body_lines[-2] + "}")
         lines.append("}")
         lines.append("")
 

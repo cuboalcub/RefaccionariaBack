@@ -1,6 +1,8 @@
 from django.test import TestCase
 from unittest.mock import patch, MagicMock
 from usuario.services.usuario_services import UserService
+from usuario.models import Perfil
+from sucursales.models import Sucursal
 
 
 class UserServiceTestCase(TestCase):
@@ -82,6 +84,35 @@ class UserServiceTestCase(TestCase):
         with self.assertRaises(ValueError) as cm:
             self.service.create_user({"username": "miguel"})
         self.assertEqual(str(cm.exception), "Faltan campos obligatorios: username y password")
+
+    @patch("usuario.services.usuario_services.UserRepository.get_by_username")
+    def test_create_user_crea_perfil_con_sucursal(self, mock_get_by_username):
+        """Testea que al registrarse con id_sucursal se cree el Perfil"""
+        mock_get_by_username.return_value = None
+        sucursal = Sucursal.objects.create(ubicacion="Centro")
+
+        result = self.service.create_user({
+            "username": "miguel",
+            "password": "eldenring",
+            "id_sucursal": sucursal.id,
+        })
+
+        perfil = Perfil.objects.get(usuario__username="miguel")
+        self.assertEqual(perfil.id_sucursal_id, sucursal.id)
+        self.assertEqual(result["username"], "miguel")
+
+    @patch("usuario.services.usuario_services.UserRepository.get_by_username")
+    def test_create_user_sucursal_inexistente_elimina_usuario(self, mock_get_by_username):
+        """Testea que si la sucursal no existe se revierta la creación"""
+        mock_get_by_username.return_value = None
+
+        with self.assertRaises(ValueError) as cm:
+            self.service.create_user({
+                "username": "miguel",
+                "password": "eldenring",
+                "id_sucursal": 9999,
+            })
+        self.assertEqual(str(cm.exception), "La sucursal indicada no existe")
 
     @patch("usuario.services.usuario_services.UserRepository.get_all")
     def test_get_all_users(self, mock_get_all):
