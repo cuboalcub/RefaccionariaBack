@@ -6,7 +6,7 @@ from django.db import migrations
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('producto', '0003_proveedor_surtir_delete_movimiento'),
+        ('producto', '0002_initial'),
     ]
 
     operations = [

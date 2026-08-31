@@ -57,7 +57,8 @@ python manage.py runserver
 
 ### Inventario (libro de movimientos)
 - El stock de un producto se calcula como `Σ ENTRADAS − Σ SALIDAS` de los `DetalleInventario` por inventario.
-- `POST /api/detalles-inventario/` recibe:
+- `POST /api/detalles-inventario/` recibe **dos formas**:
+  1. **Con movimiento existente** (requiere crear antes `POST /api/movimientos-inventario/`):
   ```json
   {
     "id_producto": 1,
@@ -67,11 +68,30 @@ python manage.py runserver
     "cantidad": 5
   }
   ```
-- `id_movimiento` es un `MovimientoInventario` de tipo `ENTRADA` (suma al stock) o `SALIDA` (resta; valida stock suficiente).
+  2. **Sin movimiento (auto-creación)** — `id_movimiento` es opcional; si no se envía, el backend crea automáticamente el `MovimientoInventario`:
+  ```json
+  {
+    "id_producto": 1,
+    "id_inventario": 1,
+    "cantidad": 7
+  }
+  ```
+  O con tipo/razón explícitos (por defecto `tipo_movimiento=ENTRADA`, `razon=Ajuste manual`):
+  ```json
+  {
+    "id_producto": 1,
+    "id_inventario": 1,
+    "cantidad": 3,
+    "tipo_movimiento": "SALIDA",
+    "razon": "Ajuste por merma",
+    "observaciones": "Productos dañados"
+  }
+  ```
+- `id_movimiento` es un `MovimientoInventario` de tipo `ENTRADA` (suma al stock) o `SALIDA` (resta; valida stock suficiente). Si no se envía, se auto-crea según `tipo_movimiento`.
 - `GET /api/inventarios/mi-sucursal/` devuelve el inventario de la sucursal del usuario autenticado, agrupado por producto con su stock actual.
 
 ### Ventas
-- `POST /api/ventas/` **ignora** el `total` enviado por el cliente. Recibe `id_usuario`, `id_metodoPago` y `id_inventario` (el inventario del que se descontará stock). El total se calcula automáticamente sumando los `subtotal` de sus detalles (`POST /api/detalle/`).
+- `POST /api/ventas/` **ignora** `total` y `id_usuario` enviados por el cliente. `id_usuario` se toma automáticamente del JWT (`Authorization: Bearer <access_token>`). Solo recibe `id_metodoPago` y `id_inventario` (el inventario del que se descontará stock). El total se calcula automáticamente sumando los `subtotal` de sus detalles (`POST /api/detalle/`).
 - `POST /api/detalle/` recibe `id_producto`, `id_venta`, `cantidad`; valida el stock contra el inventario de la venta y registra automáticamente una salida en `DetalleInventario` (`MovimientoInventario` SALIDA). Al borrar/ajustar el detalle, la salida se revierte.
 - El `subtotal` de cada detalle se calcula **en el servidor** como `precio_venta * cantidad` del producto (se ignora cualquier `subtotal` enviado por el cliente).
 

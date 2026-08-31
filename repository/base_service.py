@@ -75,12 +75,12 @@ class BaseService(IService):
             instance = self.repository.get_by_id(entity_id)
             
             if not instance:
-                raise NotFoundError(f"{self.model.__name__} con id {id} no encontrado")
+                raise NotFoundError(f"{self.model.__name__} con id {entity_id} no encontrado")
 
             return self._to_dict(instance)
 
         except ObjectDoesNotExist:
-            raise NotFoundError(f"{self.model.__name__} con id {id} no encontrado")
+            raise NotFoundError(f"{self.model.__name__} con id {entity_id} no encontrado")
         except NotFoundError:
             raise
         except Exception as e:
@@ -89,13 +89,13 @@ class BaseService(IService):
     def update(self, entity_id: int, data: Dict[str, Any]) -> Dict[str, Any]:
         """Actualiza una instancia existente"""
         try:
-            instance = self.repository.get_by_id(id)
+            instance = self.repository.get_by_id(entity_id)
             if not instance:
-                raise NotFoundError(f"{self.model.__name__} con id {id} no encontrado")
+                raise NotFoundError(f"{self.model.__name__} con id {entity_id} no encontrado")
             instance = self.repository.update(instance, data)
             return self._to_dict(instance)
         except ObjectDoesNotExist:
-            raise NotFoundError(f"{self.model.__name__} con id {id} no encontrado")
+            raise NotFoundError(f"{self.model.__name__} con id {entity_id} no encontrado")
         except ValidationError as e:
             raise ValueError(f"Error de validación: {e}")
         except NotFoundError:
@@ -112,7 +112,7 @@ class BaseService(IService):
                 instance = self.model.objects.get(id=entity_id)
             
             if not instance:
-                raise NotFoundError(f"{self.model.__name__} con id {id} no encontrado")
+                raise NotFoundError(f"{self.model.__name__} con id {entity_id} no encontrado")
 
             # Opcional: registro de quién eliminó (si se proporciona user)
             if user:
@@ -123,7 +123,7 @@ class BaseService(IService):
             return {"message": f"{self.model.__name__} eliminado exitosamente"}
 
         except ObjectDoesNotExist:
-            raise NotFoundError(f"{self.model.__name__} con id {id} no encontrado")
+            raise NotFoundError(f"{self.model.__name__} con id {entity_id} no encontrado")
         except NotFoundError:
             raise
         except Exception as e:

@@ -25,15 +25,27 @@ class VentaService(BaseService):
             "fecha": instance.fecha.isoformat() if instance.fecha else None
         }
 
-    def create(self, data):
-        if "id_usuario" not in data or "id_metodoPago" not in data:
-            raise ValueError("Faltan campos obligatorios: id_usuario, id_metodoPago")
+    def create(self, data, user=None):
+        # user se toma del JWT si se provee (controlador), sino se usa id_usuario para compatibilidad/tests
+        if user is not None and getattr(user, "is_authenticated", False):
+            # usuario autenticado: ignora id_usuario si viene en payload
+            auth_user = user
+        elif "id_usuario" in data and data["id_usuario"] is not None:
+            auth_user = self.user_repo.get_by_id(data['id_usuario'])
+            if not auth_user:
+                raise ValueError(f"Usuario con id {data['id_usuario']} no encontrado")
+        else:
+            # sin user y sin id_usuario -> error (mantiene compatibilidad con tests)
+            if "id_metodoPago" not in data:
+                raise ValueError("Faltan campos obligatorios: id_usuario, id_metodoPago")
+            raise ValueError("Faltan campos obligatorios: id_usuario (autenticación requerida)")
+
+        if "id_metodoPago" not in data or data["id_metodoPago"] is None:
+            raise ValueError("Faltan campos obligatorios: id_metodoPago")
         if "id_inventario" not in data or data["id_inventario"] is None:
             raise ValueError("Faltan campos obligatorios: id_inventario")
 
-        user = self.user_repo.get_by_id(data['id_usuario'])
-        if not user:
-            raise ValueError(f"Usuario con id {data['id_usuario']} no encontrado")
+        user = auth_user
         metodoPago = self.metodopago_repo.get_by_id(data['id_metodoPago'])
         if not metodoPago:
             raise ValueError(f"Metodo de pago con id {data['id_metodoPago']} no encontrado")

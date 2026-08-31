@@ -48,7 +48,16 @@ class DetalleInventarioService(BaseService):
     @transaction.atomic
     def create(self, data):
         data = dict(data)
-        # Auto-crear movimiento si no se envió id_movimiento
+        # Validaciones tempranas para no crear movimiento huérfano si faltan datos básicos
+        if "id_producto" not in data or data["id_producto"] is None:
+            raise ValueError("Faltan campos obligatorios: id_producto")
+        if "id_inventario" not in data or data["id_inventario"] is None:
+            raise ValueError("Faltan campos obligatorios: id_inventario")
+        if "cantidad" not in data or data["cantidad"] is None:
+            raise ValueError("Faltan campos obligatorios: cantidad")
+        if data["cantidad"] < 0:
+            raise ValueError("La cantidad no puede ser negativa")
+        # Auto-crear movimiento si no se envió id_movimiento (permite crear detalle sin movimiento previo)
         if "id_movimiento" not in data or data["id_movimiento"] is None:
             tipo = data.pop("tipo_movimiento", None) or data.pop("tipo", None) or "ENTRADA"
             razon = data.pop("razon", None) or data.pop("razón", None) or "Ajuste manual"
