@@ -41,6 +41,7 @@ ALLOWED_HOSTS = [
     "refaccionariaback.onrender.com",
     "localhost",
     "127.0.0.1",
+    "testserver",
 ]
 
 
@@ -169,13 +170,36 @@ MEDIA_ROOT = BASE_DIR / "media"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-CORS_ALLOW_ALL_ORIGINS = False  # ⚠️ No usar en producción
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173",
-    "http://localhost:3000",
-    "https://refaccionariaback.onrender.com",
-]
+# --- CORS ---
+# Configurable vía env var CORS_ALLOWED_ORIGINS (comma-separated).
+# Ej: CORS_ALLOWED_ORIGINS=https://mi-frontend.vercel.app,https://mi-frontend.onrender.com
+# Si no se define, usa defaults para desarrollo local.
+_cors_env = os.getenv("CORS_ALLOWED_ORIGINS", "")
+if _cors_env:
+    CORS_ALLOWED_ORIGINS = [o.strip() for o in _cors_env.split(",") if o.strip()]
+else:
+    CORS_ALLOWED_ORIGINS = [
+        "http://localhost:5173",
+        "http://localhost:3000",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:3000",
+    ]
+    # Permite añadir origen extra sin tocar código (ej. preview deploy)
+    _extra_origin = os.getenv("FRONTEND_URL", "").strip()
+    if _extra_origin:
+        CORS_ALLOWED_ORIGINS.append(_extra_origin)
+
+# Soporte para regex (ej. previews de Vercel): CORS_ALLOWED_ORIGIN_REGEXES=^https://.*\.vercel\.app$
+_cors_regex = os.getenv("CORS_ALLOWED_ORIGIN_REGEXES", "").strip()
+if _cors_regex:
+    CORS_ALLOWED_ORIGIN_REGEXES = [_cors_regex]
+
+CORS_ALLOW_ALL_ORIGINS = os.getenv("CORS_ALLOW_ALL_ORIGINS", "False") == "True"  # solo para debug local
 CORS_ALLOW_CREDENTIALS = True
+
+# Necesario cuando se usa CORS con credentials + CSRF/Session
+CSRF_TRUSTED_ORIGINS = CORS_ALLOWED_ORIGINS.copy()
+
 CORS_ALLOW_HEADERS = [
     "accept",
     "accept-encoding",

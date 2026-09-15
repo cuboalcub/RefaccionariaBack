@@ -177,3 +177,7 @@ venv/
 graphify-out/
 bruno/
 bruno-collection/
+
+
+*.html
+*.png
