@@ -91,7 +91,7 @@ python manage.py runserver
 - `GET /api/inventarios/mi-sucursal/` devuelve el inventario de la sucursal del usuario autenticado, agrupado por producto con su stock actual.
 
 ### Ventas
-- `POST /api/ventas/` **ignora** `total` y `id_usuario` enviados por el cliente. `id_usuario` se toma automáticamente del JWT (`Authorization: Bearer <access_token>`). Solo recibe `id_metodoPago` y `id_inventario` (el inventario del que se descontará stock). El total se calcula automáticamente sumando los `subtotal` de sus detalles (`POST /api/detalle/`).
+- `POST /api/ventas/` **ignora** `total`, `id_usuario` e `id_inventario` enviados por el cliente. `id_usuario` e `id_inventario` se toman automáticamente del JWT/perfil (`Authorization: Bearer <access_token>` → `Perfil.sucursal → Inventario`). Solo recibe `id_metodoPago`. El total se calcula automáticamente sumando los `subtotal` de sus detalles (`POST /api/detalleventa/`). Staff/superuser puede enviar `id_inventario` como override explícito.
 - `POST /api/detalle/` recibe `id_producto`, `id_venta`, `cantidad`; valida el stock contra el inventario de la venta y registra automáticamente una salida en `DetalleInventario` (`MovimientoInventario` SALIDA). Al borrar/ajustar el detalle, la salida se revierte.
 - El `subtotal` de cada detalle se calcula **en el servidor** como `precio_venta * cantidad` del producto (se ignora cualquier `subtotal` enviado por el cliente).
 

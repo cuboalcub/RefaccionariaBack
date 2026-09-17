@@ -829,11 +829,9 @@ FRAMEWORK_ROUTES = [
         "auth": True,
         "query": [],
         "body": {
-            "id_usuario": 1,
             "id_metodoPago": 1,
-            "id_inventario": 1,
         },
-        "docs": "Crea una venta con total 0 y el inventario del que se descontará stock. El total se calcula sumando los subtotales de sus detalles.",
+        "docs": "Crea una venta con total 0. id_usuario e id_inventario se derivan del JWT/perfil (Perfil.sucursal -> Inventario). Para usuarios normales se ignora id_inventario si se envía; staff/superuser puede enviar id_inventario como override. El total se calcula sumando los subtotales de sus detalles.",
     },
     {
         "folder": "Ventas",
@@ -853,11 +851,9 @@ FRAMEWORK_ROUTES = [
         "auth": True,
         "query": [],
         "body": {
-            "id_usuario": 1,
             "id_metodoPago": 2,
-            "id_inventario": 1,
         },
-        "docs": "Actualiza usuario, método de pago e inventario de una venta. El total se recalcula desde los detalles.",
+        "docs": "Actualiza el método de pago de una venta. El total se recalcula desde los detalles. id_inventario no se puede cambiar desde este endpoint (se deriva al crear).",
     },
     {
         "folder": "Ventas",
