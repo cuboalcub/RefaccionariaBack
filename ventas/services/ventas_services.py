@@ -16,14 +16,88 @@ class VentaService(BaseService):
         self.producto_repo = producto_repo or ProductoRepository()
 
     def _to_dict(self, instance):
+        id_inventario = instance.id_inventario.id if instance.id_inventario else None
+        id_sucursal = None
+        try:
+            if instance.id_inventario is not None:
+                id_sucursal = instance.id_inventario.id_sucursal_id
+        except Exception:
+            id_sucursal = None
         return {
             "id": instance.id,
             "id_usuario": instance.id_usuario.id if instance.id_usuario else None,
             "id_metodoPago": instance.id_metodoPago.id if instance.id_metodoPago else None,
-            "id_inventario": instance.id_inventario.id if instance.id_inventario else None,
+            "id_inventario": id_inventario,
+            "id_sucursal": id_sucursal,
             "total": str(instance.total),
             "fecha": instance.fecha.isoformat() if instance.fecha else None
         }
+
+    def get_all(self, page: int = None, page_size: int = 10, sucursal_id: int = None,
+                id_inventario: int = None):
+        """Devuelve ventas divididas por sucursal con paginación opcional.
+
+        - Filtra por ``sucursal_id`` vía ``id_inventario__id_sucursal_id``.
+        - Filtra por ``id_inventario`` si se indica (más específico).
+        - Si ``page`` es None devuelve lista plana (compatibilidad).
+        - Si ``page`` se indica devuelve dict {total, page, page_size, total_pages, results}.
+        """
+        try:
+            import math
+
+            if page is not None:
+                try:
+                    page = int(page)
+                    page_size = int(page_size)
+                except (TypeError, ValueError):
+                    raise ValueError("page y page_size deben ser enteros")
+                if page < 1 or page_size < 1:
+                    raise ValueError("page y page_size deben ser >= 1")
+
+            if sucursal_id is not None:
+                try:
+                    sucursal_id = int(sucursal_id)
+                except (TypeError, ValueError):
+                    raise ValueError("sucursal_id debe ser entero")
+                from sucursales.models import Sucursal
+                if not Sucursal.objects.filter(id=sucursal_id).exists():
+                    raise ValueError(f"Sucursal con id {sucursal_id} no encontrada")
+
+            if id_inventario is not None:
+                try:
+                    id_inventario = int(id_inventario)
+                except (TypeError, ValueError):
+                    raise ValueError("id_inventario debe ser entero")
+
+            qs = venta.objects.all().select_related(
+                'id_usuario', 'id_metodoPago', 'id_inventario__id_sucursal'
+            ).order_by('-fecha', '-id')
+
+            if sucursal_id is not None:
+                qs = qs.filter(id_inventario__id_sucursal_id=sucursal_id)
+            if id_inventario is not None:
+                qs = qs.filter(id_inventario_id=id_inventario)
+
+            if page is None:
+                return [self._to_dict(v) for v in qs]
+
+            total = qs.count()
+            total_pages = math.ceil(total / page_size) if total else 0
+            start = (page - 1) * page_size
+            end = start + page_size
+            instances = list(qs[start:end])
+            return {
+                "total": total,
+                "page": page,
+                "page_size": page_size,
+                "total_pages": total_pages,
+                "sucursal_id": sucursal_id,
+                "results": [self._to_dict(v) for v in instances],
+            }
+        except ValueError:
+            raise
+        except Exception as e:
+            raise ValueError(f"Error al obtener ventas: {str(e)}") from e
 
     def _resolve_inventario_for_user(self, user):
         """Resuelve el Inventario a partir del Perfil.sucursal del usuario autenticado.

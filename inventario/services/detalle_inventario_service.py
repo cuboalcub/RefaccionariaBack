@@ -377,14 +377,10 @@ class DetalleInventarioService(BaseService):
 
             # Reusar lógica de create pero sin commit separado (usamos transacción externa)
             self._validar(cur)
-            # Determinar movimiento
-            if 'id_movimiento' in cur and cur['id_movimiento'] is not None:
-                if movimiento_comun is not None and cur.get('id_movimiento') == common_movimiento:
-                    movimiento = movimiento_comun
-                else:
-                    movimiento = MovimientoInventario.objects.get(id=cur['id_movimiento'])
+            # En este punto cur siempre trae id_movimiento (original o auto-creado arriba)
+            if movimiento_comun is not None and cur.get('id_movimiento') == common_movimiento:
+                movimiento = movimiento_comun
             else:
-                # Ya manejado arriba, pero por seguridad
                 movimiento = MovimientoInventario.objects.get(id=cur['id_movimiento'])
 
             if movimiento.tipo == MovimientoInventario.TipoMovimiento.SALIDA:

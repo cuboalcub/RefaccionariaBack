@@ -14,6 +14,10 @@ class ProductoService(BaseService):
 
     def create(self, data):
         data = dict(data)
+        if "id_tipo" not in data or data["id_tipo"] is None:
+            raise ValueError("Faltan campos obligatorios: id_tipo")
+        if "id_proveedor" not in data or data["id_proveedor"] is None:
+            raise ValueError("Faltan campos obligatorios: id_proveedor")
         tipo = self.tipo_repo.get_by_id(data["id_tipo"])
         proveedor = self.proveedor_repo.get_by_id(data["id_proveedor"])
         data["id_tipo"] = tipo
@@ -162,5 +166,6 @@ class ProductoService(BaseService):
             "codigo_barras": instance.codigo_barras,
             "precio_venta": str(instance.precio_venta),
             "marca": instance.marca,
-            "costo": str(instance.costo)
+            "costo": str(instance.costo),
+            "codigoSAT": instance.codigoSAT,
         }

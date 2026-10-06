@@ -149,7 +149,10 @@ class DetalleVentaService(BaseService):
 
             nueva_cantidad = data.get("cantidad", detalle.cantidad)
             nuevo_producto_id = data.get("id_producto", detalle.id_producto_id)
-            nuevo_producto = Producto.objects.get(id=nuevo_producto_id)
+            try:
+                nuevo_producto = Producto.objects.get(id=nuevo_producto_id)
+            except Producto.DoesNotExist:
+                raise NotFoundError(f"Producto con id {nuevo_producto_id} no encontrado")
 
             # Si cambia producto, validar que el nuevo producto esté en el inventario/sucursal
             if nuevo_producto_id != detalle.id_producto_id:
