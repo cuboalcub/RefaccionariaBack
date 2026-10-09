@@ -11,7 +11,7 @@ from ventas.models import Reporte
 
 
 class ReporteVentasView(APIView):
-    #permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated]
 
     def get(self, request):
         tipo = request.query_params.get("tipo")

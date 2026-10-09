@@ -1,10 +1,13 @@
 from decimal import Decimal
+from django.core.exceptions import ObjectDoesNotExist
+from django.db import transaction
 from ventas.services.detalleventa_service import DetalleVentaService
 from ventas.models import venta
 from ventas.repositories.ventas_repository import VentaRepository
 from usuario.repositories.usuario_repositorie import UserRepository
 from ventas.repositories.metodopago_repository import MetodoPagoRepository
 from repository.base_service import BaseService
+from repository.exceptions import NotFoundError
 from producto.repositories.producto_repository import ProductoRepository
 from inventario.models import Inventario
 
@@ -129,18 +132,17 @@ class VentaService(BaseService):
             raise ValueError(f"La sucursal {user_sucursal_id} no tiene un inventario asignado")
         return inventario
 
-    def create(self, data, user=None):
-        # Distinguir flujo JWT (user pasado por controlador) vs legacy/tests (id_usuario en payload)
+    def _resolver_cabecera(self, data, user=None):
+        """Resuelve (usuario, método de pago, inventario) con las mismas
+        reglas que :meth:`create` (JWT vs legacy, staff override)."""
         via_jwt = user is not None and getattr(user, "is_authenticated", False)
         if via_jwt:
-            # usuario autenticado: ignora id_usuario si viene en payload
             auth_user = user
         elif "id_usuario" in data and data["id_usuario"] is not None:
             auth_user = self.user_repo.get_by_id(data['id_usuario'])
             if not auth_user:
                 raise ValueError(f"Usuario con id {data['id_usuario']} no encontrado")
         else:
-            # sin user y sin id_usuario -> error (mantiene compatibilidad con tests)
             if "id_metodoPago" not in data:
                 raise ValueError("Faltan campos obligatorios: id_usuario, id_metodoPago")
             raise ValueError("Faltan campos obligatorios: id_usuario (autenticación requerida)")
@@ -153,10 +155,6 @@ class VentaService(BaseService):
         if not metodoPago:
             raise ValueError(f"Metodo de pago con id {data['id_metodoPago']} no encontrado")
 
-        # Resolver id_inventario server-side a partir del JWT/perfil.
-        # - via_jwt + usuario normal: se ignora cualquier id_inventario enviado y se deriva de su sucursal.
-        # - via_jwt + staff/superuser: se permite override explícito de id_inventario (para soporte multi-sucursal/admin).
-        # - legacy (sin via_jwt, tests): se respeta id_inventario del payload para compatibilidad.
         is_staff = getattr(user, "is_staff", False) or getattr(user, "is_superuser", False)
         inventario = None
         if via_jwt:
@@ -172,13 +170,15 @@ class VentaService(BaseService):
                         raise ValueError(str(e) + " (staff: envíe id_inventario explícito)")
                     raise
         else:
-            # Flujo sin autenticación (tests/compatibilidad): exigir id_inventario en payload
             if "id_inventario" not in data or data["id_inventario"] is None:
                 raise ValueError("Faltan campos obligatorios: id_inventario")
             inventario = Inventario.objects.filter(id=data['id_inventario']).first()
             if not inventario:
                 raise ValueError(f"Inventario con id {data['id_inventario']} no encontrado")
+        return user, metodoPago, inventario
 
+    def create(self, data, user=None):
+        user, metodoPago, inventario = self._resolver_cabecera(data, user=user)
         venta_data = {
             "id_usuario": user,
             "id_metodoPago": metodoPago,
@@ -188,3 +188,204 @@ class VentaService(BaseService):
         venta = super().create(venta_data)
 
         return venta
+
+    @transaction.atomic
+    def crear_venta_completa(self, data, user=None):
+        """Crea cabecera + detalles en una sola transacción (todo o nada).
+
+        Acepta ``detalles`` como lista de ``{"producto"|"id_producto", "cantidad"}``.
+        Bloquea productos en orden determinista (evita deadlocks), valida
+        TODO antes de escribir y devuelve errores por línea. Si cualquier
+        detalle falla no queda venta huérfana, ni detalles, ni movimientos.
+        """
+        from decimal import Decimal as _Decimal
+        from inventario.models import DetalleInventario as _DetalleInv
+        from inventario.services.detalle_inventario_service import (
+            DetalleInventarioService as _InvService,
+        )
+        from inventario.services.precio_sucursal_service import (
+            PrecioSucursalService as _PrecioService,
+        )
+        from producto.models import Producto as _Producto
+        from ventas.models import detalleVenta as _DetalleVenta
+
+        detalles_raw = data.get("detalles", None)
+        if not isinstance(detalles_raw, list) or not detalles_raw:
+            raise ValueError("Faltan campos obligatorios: detalles (lista no vacía)")
+
+        user_obj, metodoPago, inventario = self._resolver_cabecera(data, user=user)
+        inv_service = _InvService()
+
+        # Normalizar líneas: índice + producto + cantidad.
+        lineas = []
+        errores = []
+        for i, d in enumerate(detalles_raw):
+            if not isinstance(d, dict):
+                errores.append(f"Línea {i}: formato inválido, se esperaba objeto")
+                continue
+            pid = d.get("id_producto", d.get("producto", None))
+            cant = d.get("cantidad", None)
+            if pid is None:
+                errores.append(f"Línea {i}: falta id_producto/producto")
+                continue
+            try:
+                pid = int(pid)
+            except (TypeError, ValueError):
+                errores.append(f"Línea {i} (producto {d.get('id_producto', d.get('producto'))}): id inválido")
+                continue
+            if isinstance(cant, bool) or not isinstance(cant, int):
+                errores.append(f"Línea {i} (producto {pid}): cantidad debe ser entero positivo")
+                continue
+            if cant <= 0:
+                errores.append(f"Línea {i} (producto {pid}): cantidad debe ser mayor a cero")
+                continue
+            lineas.append({"indice": i, "producto_id": pid, "cantidad": cant})
+        if errores:
+            raise ValueError("Errores en detalles: " + "; ".join(errores))
+
+        # Bloqueo determinista: ordena IDs para evitar deadlocks entre
+        # transacciones concurrentes.
+        ids_ordenados = sorted({ln["producto_id"] for ln in lineas})
+        productos_qs = list(
+            _Producto.objects.select_for_update().filter(id__in=ids_ordenados)
+        )
+        productos = {p.id: p for p in productos_qs}
+        # Serializar también las filas de stock del inventario para que dos
+        # ventas concurrentes no lean el mismo stock a la vez.
+        list(
+            _DetalleInv.objects.select_for_update().filter(
+                id_producto_id__in=ids_ordenados,
+                id_inventario_id=inventario.id,
+            )
+        )
+        for ln in lineas:
+            if ln["producto_id"] not in productos:
+                errores.append(
+                    f"Línea {ln['indice']} (producto {ln['producto_id']}): no existe"
+                )
+        if errores:
+            raise ValueError("Errores en detalles: " + "; ".join(errores))
+
+        # Validación de sucursal/stock. Acumula cantidades por producto para
+        # detectar el caso de producto repetido que excede el stock en total.
+        stocks = {}
+        for pid in ids_ordenados:
+            stocks[pid] = inv_service.get_stock(pid, inventario.id)
+        acumulado = {}
+        for ln in lineas:
+            acumulado[ln["producto_id"]] = acumulado.get(ln["producto_id"], 0) + ln["cantidad"]
+        sucursal_id = getattr(inventario, "id_sucursal_id", None)
+        for ln in lineas:
+            pid = ln["producto_id"]
+            if stocks.get(pid, 0) == 0:
+                nombre = productos[pid].nombre
+                errores.append(
+                    f"Línea {ln['indice']} (producto {pid} '{nombre}'): "
+                    f"no disponible en inventario {inventario.id} - stock 0"
+                )
+        for pid, total_pid in acumulado.items():
+            if total_pid > stocks.get(pid, 0):
+                indices = [str(ln["indice"]) for ln in lineas if ln["producto_id"] == pid]
+                errores.append(
+                    f"Producto {pid} (líneas {', '.join(indices)}): "
+                    f"stock insuficiente: disponible {stocks.get(pid, 0)}, "
+                    f"solicitado {total_pid}"
+                )
+        # Nota sucursal: el inventario ya viene derivado del perfil del
+        # usuario (no-staff) o del override explícito de staff en
+        # _resolver_cabecera, y el stock se mide en ese inventario, por lo
+        # que un cross-sucursal es imposible en este camino. No se duplica
+        # el chequeo del flujo por detalle.
+        if errores:
+            raise ValueError("Errores en detalles: " + "; ".join(errores))
+
+        # Escritura: una venta + N detalles + N SALIDA, total en un save.
+        venta_obj = venta.objects.create(
+            id_usuario=user_obj,
+            id_metodoPago=metodoPago,
+            id_inventario=inventario,
+            total=_Decimal("0"),
+        )
+        total = _Decimal("0")
+        detalles_out = []
+        for ln in lineas:
+            producto = productos[ln["producto_id"]]
+            precio = _PrecioService.resolver_precio_venta(producto, sucursal_id)
+            subtotal = (_Decimal(precio) * ln["cantidad"]).quantize(_Decimal("0.01"))
+            det = _DetalleVenta.objects.create(
+                id_venta=venta_obj,
+                id_producto=producto,
+                cantidad=ln["cantidad"],
+                subtotal=subtotal,
+            )
+            inv_service.crear_salida_por_venta(
+                det, producto, inventario, ln["cantidad"]
+            )
+            total += subtotal
+            detalles_out.append(
+                {
+                    "id": det.id,
+                    "id_producto": producto.id,
+                    "cantidad": ln["cantidad"],
+                    "subtotal": str(subtotal),
+                }
+            )
+        venta_obj.total = total.quantize(_Decimal("0.01"))
+        venta_obj.save(update_fields=["total"])
+        resultado = self._to_dict(venta_obj)
+        resultado["detalles"] = detalles_out
+        return resultado
+
+    def update(self, entity_id: int, data, user=None):
+        """Actualiza una venta. Solo ``id_metodoPago`` es mutable: ``total``
+        se recalcula desde los detalles y ``id_inventario``/``id_usuario``/
+        ``fecha`` se ignoran para evitar manipulación (antes un PUT podía
+        fijar cualquier total).
+        """
+        data = dict(data)
+        for campo in ("total", "id_inventario", "id_usuario", "fecha"):
+            data.pop(campo, None)
+        if "id_metodoPago" in data and data["id_metodoPago"] is not None:
+            mp_val = data["id_metodoPago"]
+            try:
+                mp = self.metodopago_repo.get_by_id(
+                    mp_val.id if hasattr(mp_val, "id") else mp_val
+                )
+            except Exception:
+                mp = None
+            if not mp:
+                raise ValueError(f"Metodo de pago con id {mp_val} no encontrado")
+            data["id_metodoPago"] = mp
+        return super().update(entity_id, data)
+
+    def delete(self, entity_id: int, user=None):
+        """Elimina una venta revirtiendo sus efectos sobre el inventario.
+
+        Sin este override, ``BaseService.delete`` borraba la venta y por
+        CASCADE sus detalles, pero los ``DetalleInventario``/``Movimiento``
+        SALIDA quedaban huérfanos (``id_detalle_venta`` es SET_NULL) y el
+        stock nunca se restauraba. Todo se ejecuta en un único
+        ``transaction.atomic`` con bloqueo de la venta.
+        """
+        from ventas.models import detalleVenta
+        from inventario.services.detalle_inventario_service import (
+            DetalleInventarioService,
+        )
+
+        with transaction.atomic():
+            try:
+                instance = venta.objects.select_for_update().get(id=entity_id)
+            except (venta.DoesNotExist, ObjectDoesNotExist):
+                raise NotFoundError(
+                    f"venta con id {entity_id} no encontrado"
+                )
+            detalles = list(
+                detalleVenta.objects.select_for_update().filter(
+                    id_venta_id=entity_id
+                )
+            )
+            inventario_service = DetalleInventarioService()
+            for detalle in detalles:
+                inventario_service.revertir_salida_por_venta(detalle)
+            instance.delete()
+            return {"message": "venta eliminado exitosamente"}

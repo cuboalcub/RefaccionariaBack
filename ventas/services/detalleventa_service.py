@@ -1,5 +1,6 @@
 from decimal import Decimal
 
+from django.core.exceptions import ValidationError
 from django.db import transaction
 
 from ventas.models import detalleVenta
@@ -110,16 +111,25 @@ class DetalleVentaService(BaseService):
                 f"El producto '{producto.nombre}' no está disponible en el inventario {venta.id_inventario_id} (Sucursal {sucursal_id}) - stock 0"
             )
 
+    @staticmethod
+    def _validar_cantidad(cantidad):
+        if isinstance(cantidad, bool) or not isinstance(cantidad, int) or cantidad <= 0:
+            raise ValueError("La cantidad debe ser un entero mayor a cero")
+
     def create(self, data, user=None):
         if "id_producto" not in data or "id_venta" not in data or "cantidad" not in data:
             raise ValueError("Faltan campos obligatorios: id_producto, id_venta, cantidad")
+        self._validar_cantidad(data["cantidad"])
         with transaction.atomic():
             venta = self.venta_repo.get_by_id(data["id_venta"])
             if not venta:
                 raise NotFoundError(f"Venta con id {data['id_venta']} no encontrado")
             if not venta.id_inventario:
                 raise ValueError("La venta no tiene inventario asignado")
-            producto = Producto.objects.select_for_update().get(id=data["id_producto"])
+            try:
+                producto = Producto.objects.select_for_update().get(id=data["id_producto"])
+            except (Producto.DoesNotExist, ValidationError, ValueError, TypeError):
+                raise NotFoundError(f"Producto con id {data['id_producto']} no encontrado")
 
             self._validar_producto_en_inventario_sucursal(producto, venta, user=user)
             self.inventario_service._validar_salida(producto.id, venta.id_inventario_id, data["cantidad"])
@@ -148,6 +158,7 @@ class DetalleVentaService(BaseService):
                 raise ValueError("La venta no tiene inventario asignado")
 
             nueva_cantidad = data.get("cantidad", detalle.cantidad)
+            self._validar_cantidad(nueva_cantidad)
             nuevo_producto_id = data.get("id_producto", detalle.id_producto_id)
             try:
                 nuevo_producto = Producto.objects.get(id=nuevo_producto_id)

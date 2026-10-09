@@ -1,8 +1,21 @@
 from rest_framework import status
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
+from repository.exceptions import NotFoundError
 from ventas.services.ventas_services import VentaService
 from repository.base_controller import BaseListController, BaseDetailController
+
+
+def _sucursal_de_usuario(user):
+    """Devuelve el id de sucursal del perfil del usuario (o None)."""
+    perfil = getattr(user, "perfil", None)
+    sid = getattr(perfil, "id_sucursal_id", None) if perfil is not None else None
+    if sid is None:
+        from usuario.models import Perfil
+        p = Perfil.objects.filter(usuario_id=user.id).first()
+        sid = p.id_sucursal_id if p else None
+    return sid
 
 
 class VentasListController(BaseListController):
@@ -76,6 +89,12 @@ class VentasListController(BaseListController):
             is_staff = getattr(request.user, "is_staff", False) or getattr(request.user, "is_superuser", False)
             if not is_staff:
                 data.pop("id_inventario", None)
+            # Camino atómico (Bug B): si trae "detalles", cabecera + líneas
+            # en una sola transacción todo-o-nada. Camino legacy sin cambios.
+            # Los errores por línea llegan como ValueError -> 400 con detalle.
+            if isinstance(data.get("detalles"), list) and data["detalles"]:
+                item = self.service.crear_venta_completa(data, user=request.user)
+                return Response(item, status=status.HTTP_201_CREATED)
             item = self.service.create(data, user=request.user)
             return Response(item, status=status.HTTP_201_CREATED)
         except ValueError as e:
@@ -85,5 +104,43 @@ class VentasListController(BaseListController):
 class VentasDetailController(BaseDetailController):
     def __init__(self):
         super().__init__(VentaService)
+
+    def _check_sucursal(self, request, pk):
+        """403 si un usuario no-staff opera una venta de otra sucursal."""
+        if getattr(request.user, "is_staff", False) or getattr(request.user, "is_superuser", False):
+            return
+        item = self.service.get_by_id(pk)
+        user_suc = _sucursal_de_usuario(request.user)
+        if user_suc is None:
+            raise ValueError("El usuario no tiene una sucursal asignada")
+        if item.get("id_sucursal") is not None and item["id_sucursal"] != user_suc:
+            raise PermissionDenied("No tiene acceso a ventas de otra sucursal")
+
+    def _autorizado_o_error(self, request, pk):
+        try:
+            self._check_sucursal(request, pk)
+            return None
+        except NotFoundError as e:
+            return Response({"error": str(e)}, status=status.HTTP_404_NOT_FOUND)
+        except ValueError as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    def get(self, request, pk: int) -> Response:
+        err = self._autorizado_o_error(request, pk)
+        if err is not None:
+            return err
+        return super().get(request, pk)
+
+    def put(self, request, pk: int) -> Response:
+        err = self._autorizado_o_error(request, pk)
+        if err is not None:
+            return err
+        return super().put(request, pk)
+
+    def delete(self, request, pk: int) -> Response:
+        err = self._autorizado_o_error(request, pk)
+        if err is not None:
+            return err
+        return super().delete(request, pk)
 
 
