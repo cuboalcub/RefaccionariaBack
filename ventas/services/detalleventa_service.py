@@ -12,6 +12,7 @@ from inventario.services.detalle_inventario_service import DetalleInventarioServ
 from inventario.services.precio_sucursal_service import PrecioSucursalService
 from repository.base_service import BaseService
 from repository.exceptions import NotFoundError
+from repository.permissions import es_staff
 
 class DetalleVentaService(BaseService):
     def __init__(self, detalle_repo=None, producto_repo=None, venta_repo=None):
@@ -74,8 +75,7 @@ class DetalleVentaService(BaseService):
                     except Exception:
                         user_sucursal_id = None
             # Si el usuario es staff/superuser, bypass (operador global)
-            is_staff = getattr(user, 'is_staff', False) or getattr(user, 'is_superuser', False)
-            if user_sucursal_id is not None and not is_staff:
+            if user_sucursal_id is not None and not es_staff(user):
                 sucursal_venta_id = None
                 try:
                     # venta.id_inventario puede ser instancia o id
@@ -149,10 +149,19 @@ class DetalleVentaService(BaseService):
             return resultado
 
     def update(self, id, data, user=None):
+        from inventario.models import DetalleInventario as _DetalleInv
+        from ventas.models import venta as _Venta
+
         with transaction.atomic():
             detalle = self.repository.get_by_id(id)
             if not detalle:
                 raise NotFoundError(f"{self.model.__name__} con id {id} no encontrado")
+            # Bloqueos espejando el camino atómico: la venta y las filas de
+            # stock, para que dos ajustes concurrentes no lean el mismo stock.
+            try:
+                _Venta.objects.select_for_update().get(id=detalle.id_venta_id)
+            except _Venta.DoesNotExist:
+                raise NotFoundError(f"Venta con id {detalle.id_venta_id} no encontrado")
             venta = self.venta_repo.get_by_id(detalle.id_venta_id)
             if not venta or not venta.id_inventario:
                 raise ValueError("La venta no tiene inventario asignado")
@@ -161,9 +170,15 @@ class DetalleVentaService(BaseService):
             self._validar_cantidad(nueva_cantidad)
             nuevo_producto_id = data.get("id_producto", detalle.id_producto_id)
             try:
-                nuevo_producto = Producto.objects.get(id=nuevo_producto_id)
+                nuevo_producto = Producto.objects.select_for_update().get(id=nuevo_producto_id)
             except Producto.DoesNotExist:
                 raise NotFoundError(f"Producto con id {nuevo_producto_id} no encontrado")
+            list(
+                _DetalleInv.objects.select_for_update().filter(
+                    id_producto_id=nuevo_producto_id,
+                    id_inventario_id=venta.id_inventario_id,
+                )
+            )
 
             # Si cambia producto, validar que el nuevo producto esté en el inventario/sucursal
             if nuevo_producto_id != detalle.id_producto_id:

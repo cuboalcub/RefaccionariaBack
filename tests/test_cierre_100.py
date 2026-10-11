@@ -402,8 +402,8 @@ class TestMiniRepoCompleto:
 
 @pytest.mark.django_db
 class TestUsuarioPut404:
-    def test_put_inexistente_404(self, api_client, user):
-        api_client.force_authenticate(user=user)
+    def test_put_inexistente_404(self, api_client, staff_user):
+        api_client.force_authenticate(user=staff_user)
         r = api_client.put(
             "/api/users/999999", {"username": "x"}, format="json"
         )

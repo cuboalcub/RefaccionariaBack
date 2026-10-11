@@ -38,7 +38,8 @@ class TestVentaService:
         mp = MetodoPagoFactory()
         res = _venta_base(u, inv, mp)
         assert res["id_usuario"] == u.id
-        assert res["id_inventario"] == inv.id
+        assert res["id_sucursal"] == inv.id_sucursal_id
+        assert "id_inventario" not in res
         assert Decimal(res["total"]) == Decimal("0.00")
 
     def test_create_via_jwt_deriva_inventario(self):
@@ -50,7 +51,8 @@ class TestVentaService:
 
         res = VentaService().create({"id_metodoPago": mp.id}, user=u)
         assert res["id_usuario"] == u.id
-        assert res["id_inventario"] == inv.id
+        assert res["id_sucursal"] == suc.id
+        assert "id_inventario" not in res
 
     def test_create_via_jwt_sin_sucursal_falla(self):
         u = UserFactory()
@@ -179,7 +181,8 @@ class TestVentasAPI:
             "/api/ventas/", {"id_metodoPago": mp.id}, format="json"
         )
         assert resp.status_code == 201, resp.content
-        assert resp.data["id_inventario"] == inventario.id
+        assert resp.data["id_sucursal"] == inventario.id_sucursal_id
+        assert "id_inventario" not in resp.data
 
     def test_post_ventas_sin_auth_401(self, api_client):
         resp = api_client.post("/api/ventas/", {}, format="json")
@@ -210,4 +213,4 @@ class TestVentasAPI:
         resp = auth_client.get("/api/ventas/")
         assert resp.status_code == 200
         assert len(resp.data) == 1
-        assert resp.data[0]["id_inventario"] == inventario.id
+        assert resp.data[0]["id_sucursal"] == inventario.id_sucursal_id

@@ -135,7 +135,10 @@ class BaseService(IService):
         """Devuelve instancias que coinciden con los filtros"""
         try:
             if self.repository:
-                instances = self.repository.get_by_filters(filters)
+                if hasattr(self.repository, "get_by_filters"):
+                    instances = self.repository.get_by_filters(filters)
+                else:
+                    instances = self.repository.filter(filters)
             else:
                 instances = self.model.objects.filter(**filters)
             

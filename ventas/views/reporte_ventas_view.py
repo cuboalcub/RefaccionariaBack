@@ -4,6 +4,7 @@ from rest_framework.permissions import IsAuthenticated
 from django.template.loader import render_to_string
 from django.http import HttpResponse
 from weasyprint import HTML
+from repository.permissions import exigir_permiso
 from ventas.services.reporte_ventas_service import ReporteVentasService
 
 from django.core.files.base import ContentFile
@@ -14,6 +15,7 @@ class ReporteVentasView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        exigir_permiso(request.user, "reporte.ver")
         tipo = request.query_params.get("tipo")
         year = request.query_params.get("year")
         month = request.query_params.get("month")

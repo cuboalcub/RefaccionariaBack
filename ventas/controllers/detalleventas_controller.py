@@ -1,27 +1,28 @@
 from rest_framework import status
-from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
 from repository.base_controller import BaseDetailController, BaseListController
 from repository.exceptions import NotFoundError
-from ventas.controllers.ventas_controller import _sucursal_de_usuario
+from repository.permissions import exigir_misma_sucursal, exigir_permiso
 from ventas.models import detalleVenta
 from ventas.services.detalleventa_service import DetalleVentaService
 
 
 class DetalleVentaListCreate(BaseListController):
+    permiso_get = "ventas.vender"
+
     def __init__(self):
         super().__init__(DetalleVentaService)
 
     def post(self, request) -> Response:
-        try:
-            # Pasar request.user para validación de sucursal
-            item = self.service.create(request.data, user=request.user)
-            return Response(item, status=status.HTTP_201_CREATED)
-        except NotFoundError as e:
-            return Response({"error": str(e)}, status=status.HTTP_404_NOT_FOUND)
-        except ValueError as e:
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        # Creación deprecada (Fase 3): la venta parcial por pasos dejaba
+        # totales inconsistentes y permitía oversell. Crear siempre con
+        # POST /api/ventas/ {"detalles": [...]} (todo o nada).
+        # GET/PUT/DELETE por unidad siguen vigentes.
+        return Response(
+            {"error": "Crear detalles por separado está deprecado. Use POST /api/ventas/ con 'detalles'."},
+            status=status.HTTP_410_GONE,
+        )
 
 
 class DetalleVentaDetail(BaseDetailController):
@@ -30,36 +31,32 @@ class DetalleVentaDetail(BaseDetailController):
 
     def _check_sucursal(self, request, pk):
         """403 si un usuario no-staff opera un detalle de otra sucursal."""
-        if getattr(request.user, "is_staff", False) or getattr(request.user, "is_superuser", False):
-            return
         det = detalleVenta.objects.select_related(
             "id_venta__id_inventario__id_sucursal"
         ).filter(id=pk).first()
         if det is None:
             return
         inv = det.id_venta.id_inventario if det.id_venta else None
-        venta_suc = inv.id_sucursal_id if inv else None
-        user_suc = _sucursal_de_usuario(request.user)
-        if user_suc is None:
-            raise ValueError("El usuario no tiene una sucursal asignada")
-        if venta_suc is not None and venta_suc != user_suc:
-            raise PermissionDenied("No tiene acceso a detalles de otra sucursal")
+        exigir_misma_sucursal(
+            request.user, inv.id_sucursal_id if inv else None, "detalles"
+        )
 
-    def _autorizado_o_error(self, request, pk):
+    def _autorizado_o_error(self, request, pk, accion):
         try:
+            exigir_permiso(request.user, accion)
             self._check_sucursal(request, pk)
             return None
         except ValueError as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
     def get(self, request, pk: int) -> Response:
-        err = self._autorizado_o_error(request, pk)
+        err = self._autorizado_o_error(request, pk, "ventas.vender")
         if err is not None:
             return err
         return super().get(request, pk)
 
     def put(self, request, pk: int) -> Response:
-        err = self._autorizado_o_error(request, pk)
+        err = self._autorizado_o_error(request, pk, "ventas.anular")
         if err is not None:
             return err
         try:
@@ -71,7 +68,7 @@ class DetalleVentaDetail(BaseDetailController):
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
     def delete(self, request, pk: int) -> Response:
-        err = self._autorizado_o_error(request, pk)
+        err = self._autorizado_o_error(request, pk, "ventas.anular")
         if err is not None:
             return err
         return super().delete(request, pk)

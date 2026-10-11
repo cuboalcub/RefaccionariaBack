@@ -306,4 +306,5 @@ class VentaServiceTestCase(TestCase):
 
         self.assertIsNotNone(resultado["id"])
         self.assertEqual(str(resultado["total"]), "0")
-        self.assertEqual(resultado["id_inventario"], self.inventario.id)
+        self.assertEqual(resultado["id_sucursal"], self.inventario.id_sucursal_id)
+        self.assertNotIn("id_inventario", resultado)

@@ -36,7 +36,7 @@ class DetalleInventario(models.Model):
     id_inventario = models.ForeignKey(Inventario, on_delete=models.CASCADE, related_name='detalles')
     id_proveedor = models.ForeignKey(Proveedor, on_delete=models.SET_NULL, blank=True, null=True, related_name='detalles_inventario')
     id_movimiento = models.ForeignKey(MovimientoInventario, on_delete=models.CASCADE, related_name='detalles')
-    id_detalle_venta = models.OneToOneField("ventas.detalleVenta", on_delete=models.SET_NULL, blank=True, null=True, related_name='detalle_inventario')
+    id_detalle_venta = models.OneToOneField("ventas.detalleVenta", on_delete=models.PROTECT, blank=True, null=True, related_name='detalle_inventario')
     cantidad = models.IntegerField()
     update_at = models.DateTimeField(auto_now=True)
 

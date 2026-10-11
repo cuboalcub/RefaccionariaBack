@@ -20,7 +20,7 @@ from tests.factories import (
 from usuario.models import Perfil
 
 
-def _ctx(cantidad_entrada=10, precio=Decimal("100.00")):
+def _ctx(cantidad_entrada=10, precio=Decimal("100.00"), rol="cajero"):
     suc = SucursalFactory()
     inv = InventarioFactory(id_sucursal=suc)
     prod = ProductoFactory(precio_venta=precio)
@@ -34,7 +34,7 @@ def _ctx(cantidad_entrada=10, precio=Decimal("100.00")):
         }
     )
     u = UserFactory()
-    Perfil.objects.create(usuario=u, id_sucursal=suc)
+    Perfil.objects.create(usuario=u, id_sucursal=suc, rol=rol)
     mp = MetodoPagoFactory()
     v = VentaService().create(
         {"id_usuario": u.id, "id_inventario": inv.id, "id_metodoPago": mp.id}
@@ -81,21 +81,21 @@ class TestCantidadLegacy:
                 user=u,
             )
 
-    def test_api_create_cantidad_cero_400_y_producto_404(self):
+    def test_api_create_deprecado_410(self):
         _, inv, prod, u, _, v = _ctx()
         c = _auth(u)
-        r0 = c.post(
+        r = c.post(
             "/api/detalleventa/",
             {"id_producto": prod.id, "id_venta": v["id"], "cantidad": 0},
             format="json",
         )
-        assert r0.status_code == 400
-        r404 = c.post(
-            "/api/detalleventa/",
-            {"id_producto": 999999, "id_venta": v["id"], "cantidad": 1},
-            format="json",
-        )
-        assert r404.status_code == 404
+        assert r.status_code == 410
+        # la validación vive en el servicio y la vía atómica
+        with pytest.raises(ValueError, match="mayor a cero"):
+            DetalleVentaService().create(
+                {"id_producto": prod.id, "id_venta": v["id"], "cantidad": 0},
+                user=u,
+            )
         assert DetalleInventarioService().get_stock(prod.id, inv.id) == 10
 
     def test_update_cantidad_cero_falla(self):
@@ -111,7 +111,7 @@ class TestCantidadLegacy:
 @pytest.mark.django_db
 class TestPutVentaBlindado:
     def test_put_total_se_ignora(self):
-        _, _, prod, u, _, v = _ctx()
+        _, _, prod, u, _, v = _ctx(rol="encargado")
         DetalleVentaService().create(
             {"id_producto": prod.id, "id_venta": v["id"], "cantidad": 2},
             user=u,
@@ -122,7 +122,7 @@ class TestPutVentaBlindado:
         assert venta.objects.get(id=v["id"]).total == Decimal("200.00")
 
     def test_put_cambia_metodopago(self):
-        _, _, _, u, _, v = _ctx()
+        _, _, _, u, _, v = _ctx(rol="encargado")
         mp2 = MetodoPagoFactory(tipo="TARJETA", descripcion="Tarjeta")
         c = _auth(u)
         resp = c.put(
@@ -132,7 +132,7 @@ class TestPutVentaBlindado:
         assert venta.objects.get(id=v["id"]).id_metodoPago_id == mp2.id
 
     def test_put_metodopago_inexistente_y_basura_400(self):
-        _, _, _, u, _, v = _ctx()
+        _, _, _, u, _, v = _ctx(rol="encargado")
         c = _auth(u)
         assert (
             c.put(
@@ -216,13 +216,35 @@ class TestScopingVentaDetalle:
         _, _, _, _, _, d_a, _, _, _ = self._dos_sucursales()
         api_client.force_authenticate(user=user)
         assert api_client.get(f"/api/detalleventa/{d_a['id']}/").status_code == 400
+        # PUT/DELETE exigen ventas.anular antes del scoping -> 403 de rol
         assert (
             api_client.put(
                 f"/api/detalleventa/{d_a['id']}/", {"cantidad": 1}, format="json"
             ).status_code
+            == 403
+        )
+        assert api_client.delete(f"/api/detalleventa/{d_a['id']}/").status_code == 403
+
+    def test_encargado_sin_sucursal_put_delete_400(self):
+        enc = UserFactory()
+        Perfil.objects.create(usuario=enc, rol="encargado")
+        c = _auth(enc)
+        _, _, _, _, _, d_a, _, _, _ = self._dos_sucursales()
+        assert (
+            c.put(f"/api/detalleventa/{d_a['id']}/", {"cantidad": 1}, format="json").status_code
             == 400
         )
-        assert api_client.delete(f"/api/detalleventa/{d_a['id']}/").status_code == 400
+        assert c.delete(f"/api/detalleventa/{d_a['id']}/").status_code == 400
+
+    def test_encargado_put_delete_inexistente_404(self):
+        suc = SucursalFactory()
+        enc = UserFactory()
+        Perfil.objects.create(usuario=enc, id_sucursal=suc, rol="encargado")
+        c = _auth(enc)
+        assert c.put("/api/ventas/999999/", {"total": "1.00"}, format="json").status_code == 404
+        assert c.delete("/api/ventas/999999/").status_code == 404
+        assert c.put("/api/detalleventa/999999/", {"cantidad": 1}, format="json").status_code == 404
+        assert c.delete("/api/detalleventa/999999/").status_code == 404
 
     def test_venta_put_usuario_sin_sucursal_400(self, api_client, user):
         _, _, _, _, v_a, _, _, _, _ = self._dos_sucursales()
@@ -231,5 +253,5 @@ class TestScopingVentaDetalle:
             api_client.put(
                 f"/api/ventas/{v_a['id']}/", {"total": "1.00"}, format="json"
             ).status_code
-            == 400
+            == 403
         )

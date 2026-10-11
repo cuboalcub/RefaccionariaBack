@@ -71,7 +71,7 @@ class TestVentaToDict:
             id_usuario=None, id_metodoPago=None, id_inventario=None, total=Decimal("0.00")
         )
         d = VentaService()._to_dict(v)
-        assert d["id_inventario"] is None
+        assert "id_inventario" not in d
         assert d["id_sucursal"] is None
         assert d["id_usuario"] is None
         assert d["id_metodoPago"] is None
@@ -94,7 +94,7 @@ class TestVentaToDict:
             fecha=None,
         )
         d = VentaService()._to_dict(inst)
-        assert d["id_inventario"] == 999
+        assert "id_inventario" not in d
         assert d["id_sucursal"] is None
         assert d["fecha"] is None
 
@@ -141,22 +141,17 @@ class TestVentaGetAll:
         with pytest.raises(ValueError, match="no encontrada"):
             VentaService().get_all(sucursal_id=999999)
 
-    def test_id_inventario_invalido(self):
-        with pytest.raises(ValueError, match="id_inventario debe ser entero"):
-            VentaService().get_all(id_inventario="zzz")
+    def test_sin_filtro_devuelve_todo(self):
+        self._dos_ventas()
+        todas = VentaService().get_all()
+        assert len(todas) == 2
 
     def test_filtros(self):
         sa, sb, ia, ib = self._dos_ventas()
         solo_a = VentaService().get_all(sucursal_id=sa.id)
         assert len(solo_a) == 1 and solo_a[0]["id_sucursal"] == sa.id
-        por_inv = VentaService().get_all(id_inventario=ib.id)
-        assert len(por_inv) == 1 and por_inv[0]["id_inventario"] == ib.id
         pag = VentaService().get_all(page=1, page_size=10, sucursal_id=sb.id)
         assert pag["total"] == 1 and pag["sucursal_id"] == sb.id
-        ambos = VentaService().get_all(
-            page=1, page_size=10, sucursal_id=sa.id, id_inventario=ia.id
-        )
-        assert ambos["total"] == 1
 
 
 # ------------------------------------------- VentaService._resolve_inventario
@@ -249,7 +244,7 @@ class TestVentaCreateExtra:
         )
         assert res["id_usuario"] == u.id
 
-    def test_staff_override_id_inventario(self):
+    def test_staff_override_sucursal_id(self):
         sa, sb = SucursalFactory(), SucursalFactory()
         InventarioFactory(id_sucursal=sa)
         inv_b = InventarioFactory(id_sucursal=sb)
@@ -257,35 +252,53 @@ class TestVentaCreateExtra:
         Perfil.objects.create(usuario=staff, id_sucursal=sa)
         mp = MetodoPagoFactory()
         res = VentaService().create(
-            {"id_metodoPago": mp.id, "id_inventario": inv_b.id}, user=staff
+            {"id_metodoPago": mp.id, "sucursal_id": sb.id}, user=staff
         )
-        assert res["id_inventario"] == inv_b.id
+        assert res["id_sucursal"] == sb.id
+        assert "id_inventario" not in res
 
-    def test_staff_override_inexistente(self):
+    def test_staff_sucursal_invalida(self):
         staff = UserFactory(is_staff=True)
         mp = MetodoPagoFactory()
-        with pytest.raises(ValueError, match="no encontrado"):
+        with pytest.raises(ValueError, match="sucursal_id debe ser entero"):
             VentaService().create(
-                {"id_metodoPago": mp.id, "id_inventario": 999999}, user=staff
+                {"id_metodoPago": mp.id, "sucursal_id": "abc"}, user=staff
             )
 
-    def test_staff_sin_inventario_pide_explicito(self):
+    def test_staff_sucursal_inexistente(self):
         staff = UserFactory(is_staff=True)
         mp = MetodoPagoFactory()
-        with pytest.raises(ValueError, match="envíe id_inventario explícito"):
+        with pytest.raises(ValueError, match="no encontrada"):
+            VentaService().create(
+                {"id_metodoPago": mp.id, "sucursal_id": 999999}, user=staff
+            )
+
+    def test_staff_sucursal_sin_inventario(self):
+        suc = SucursalFactory()
+        staff = UserFactory(is_staff=True)
+        mp = MetodoPagoFactory()
+        with pytest.raises(ValueError, match="no tiene un inventario"):
+            VentaService().create(
+                {"id_metodoPago": mp.id, "sucursal_id": suc.id}, user=staff
+            )
+
+    def test_staff_sin_sucursal_pide_explicito(self):
+        staff = UserFactory(is_staff=True)
+        mp = MetodoPagoFactory()
+        with pytest.raises(ValueError, match="envíe sucursal_id explícito"):
             VentaService().create({"id_metodoPago": mp.id}, user=staff)
 
     def test_normal_ignora_override_usa_su_sucursal(self):
         sa, sb = SucursalFactory(), SucursalFactory()
-        inv_a = InventarioFactory(id_sucursal=sa)
-        inv_b = InventarioFactory(id_sucursal=sb)
+        InventarioFactory(id_sucursal=sa)
+        InventarioFactory(id_sucursal=sb)
         u = UserFactory()
         Perfil.objects.create(usuario=u, id_sucursal=sa)
         mp = MetodoPagoFactory()
         res = VentaService().create(
-            {"id_metodoPago": mp.id, "id_inventario": inv_b.id}, user=u
+            {"id_metodoPago": mp.id, "sucursal_id": sb.id}, user=u
         )
-        assert res["id_inventario"] == inv_a.id
+        assert res["id_sucursal"] == sa.id
 
 
 # --------------------------------- DetalleVentaService precio / recalcular
@@ -614,6 +627,7 @@ class TestReporteGenerar:
 @pytest.mark.django_db
 class TestReporteView:
     def _auth(self, api_client, user):
+        Perfil.objects.update_or_create(usuario=user, defaults={"rol": "encargado"})
         api_client.force_authenticate(user=user)
         return api_client
 
@@ -682,10 +696,9 @@ class TestVentasController:
         resp = api_client.get("/api/ventas/", {"sucursal_id": "abc"})
         assert resp.status_code == 400
 
-    def test_get_inventario_invalido_staff_400(self, api_client, staff_user):
-        api_client.force_authenticate(user=staff_user)
-        resp = api_client.get("/api/ventas/", {"id_inventario": "abc"})
-        assert resp.status_code == 400
+    def test_get_ignora_id_inventario_legacy(self, auth_client):
+        # Parámetro retirado del contrato: se ignora, no rompe.
+        assert auth_client.get("/api/ventas/", {"id_inventario": "abc"}).status_code == 200
 
     def test_get_usuario_sin_sucursal_400(self, api_client, user):
         api_client.force_authenticate(user=user)
@@ -699,17 +712,32 @@ class TestVentasController:
         assert bad.status_code == 400
 
     def test_post_staff_override(self, api_client, staff_user):
-        inv = InventarioFactory()
+        suc = SucursalFactory()
+        InventarioFactory(id_sucursal=suc)
         api_client.force_authenticate(user=staff_user)
         mp = MetodoPagoFactory()
         resp = api_client.post(
-            "/api/ventas/", {"id_metodoPago": mp.id, "id_inventario": inv.id},
+            "/api/ventas/", {"id_metodoPago": mp.id, "sucursal_id": suc.id},
             format="json",
         )
         assert resp.status_code == 201
-        assert resp.data["id_inventario"] == inv.id
+        assert resp.data["id_sucursal"] == suc.id
+        assert "id_inventario" not in resp.data
 
-    def test_detail_get_put_delete(self, auth_client, user, inventario):
+    def test_post_normal_ignora_sucursal_id(self, auth_client, user, inventario):
+        otra = SucursalFactory()
+        InventarioFactory(id_sucursal=otra)
+        mp = MetodoPagoFactory()
+        resp = auth_client.post(
+            "/api/ventas/", {"id_metodoPago": mp.id, "sucursal_id": otra.id},
+            format="json",
+        )
+        assert resp.status_code == 201
+        assert resp.data["id_sucursal"] == inventario.id_sucursal_id
+
+    def test_detail_get_put_delete(self, auth_client, user, perfil, inventario):
+        perfil.rol = "encargado"
+        perfil.save(update_fields=["rol"])
         mp = MetodoPagoFactory()
         v = _legacy_venta(user, inventario, mp)
         assert auth_client.get(f"/api/ventas/{v['id']}/").status_code == 200
@@ -730,28 +758,21 @@ class TestDetalleController:
         prod = ProductoFactory(precio_venta=Decimal("100.00"))
         _entrada(prod, inv)
         u = UserFactory()
-        Perfil.objects.create(usuario=u, id_sucursal=suc)
+        Perfil.objects.create(usuario=u, id_sucursal=suc, rol="encargado")
         api_client.force_authenticate(user=u)
         mp = MetodoPagoFactory()
         v = _legacy_venta(u, inv, mp)
         return prod, v, u
 
-    def test_post_ok_404_400(self, api_client):
+    def test_post_creacion_deprecada_410(self, api_client):
         prod, v, u = self._ctx(api_client)
-        ok = api_client.post(
+        r = api_client.post(
             "/api/detalleventa/",
             {"id_producto": prod.id, "id_venta": v["id"], "cantidad": 1},
             format="json",
         )
-        assert ok.status_code == 201
-        nf = api_client.post(
-            "/api/detalleventa/",
-            {"id_producto": prod.id, "id_venta": 999999, "cantidad": 1},
-            format="json",
-        )
-        assert nf.status_code == 404
-        bad = api_client.post("/api/detalleventa/", {"cantidad": 1}, format="json")
-        assert bad.status_code == 400
+        assert r.status_code == 410
+        assert "detalles" in r.data["error"]
 
     def test_put_ok_404_400(self, api_client):
         prod, v, u = self._ctx(api_client)
@@ -799,6 +820,7 @@ class TestDetalleController:
 @pytest.mark.django_db
 class TestMetodoPagoController:
     def _client(self, api_client, user):
+        Perfil.objects.create(usuario=user, rol="encargado")
         api_client.force_authenticate(user=user)
         return api_client
 

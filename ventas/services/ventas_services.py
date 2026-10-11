@@ -8,6 +8,7 @@ from usuario.repositories.usuario_repositorie import UserRepository
 from ventas.repositories.metodopago_repository import MetodoPagoRepository
 from repository.base_service import BaseService
 from repository.exceptions import NotFoundError
+from repository.permissions import es_staff
 from producto.repositories.producto_repository import ProductoRepository
 from inventario.models import Inventario
 
@@ -19,7 +20,6 @@ class VentaService(BaseService):
         self.producto_repo = producto_repo or ProductoRepository()
 
     def _to_dict(self, instance):
-        id_inventario = instance.id_inventario.id if instance.id_inventario else None
         id_sucursal = None
         try:
             if instance.id_inventario is not None:
@@ -30,18 +30,15 @@ class VentaService(BaseService):
             "id": instance.id,
             "id_usuario": instance.id_usuario.id if instance.id_usuario else None,
             "id_metodoPago": instance.id_metodoPago.id if instance.id_metodoPago else None,
-            "id_inventario": id_inventario,
             "id_sucursal": id_sucursal,
             "total": str(instance.total),
             "fecha": instance.fecha.isoformat() if instance.fecha else None
         }
 
-    def get_all(self, page: int = None, page_size: int = 10, sucursal_id: int = None,
-                id_inventario: int = None):
+    def get_all(self, page: int = None, page_size: int = 10, sucursal_id: int = None):
         """Devuelve ventas divididas por sucursal con paginación opcional.
 
         - Filtra por ``sucursal_id`` vía ``id_inventario__id_sucursal_id``.
-        - Filtra por ``id_inventario`` si se indica (más específico).
         - Si ``page`` es None devuelve lista plana (compatibilidad).
         - Si ``page`` se indica devuelve dict {total, page, page_size, total_pages, results}.
         """
@@ -66,20 +63,12 @@ class VentaService(BaseService):
                 if not Sucursal.objects.filter(id=sucursal_id).exists():
                     raise ValueError(f"Sucursal con id {sucursal_id} no encontrada")
 
-            if id_inventario is not None:
-                try:
-                    id_inventario = int(id_inventario)
-                except (TypeError, ValueError):
-                    raise ValueError("id_inventario debe ser entero")
-
             qs = venta.objects.all().select_related(
                 'id_usuario', 'id_metodoPago', 'id_inventario__id_sucursal'
             ).order_by('-fecha', '-id')
 
             if sucursal_id is not None:
                 qs = qs.filter(id_inventario__id_sucursal_id=sucursal_id)
-            if id_inventario is not None:
-                qs = qs.filter(id_inventario_id=id_inventario)
 
             if page is None:
                 return [self._to_dict(v) for v in qs]
@@ -155,19 +144,35 @@ class VentaService(BaseService):
         if not metodoPago:
             raise ValueError(f"Metodo de pago con id {data['id_metodoPago']} no encontrado")
 
-        is_staff = getattr(user, "is_staff", False) or getattr(user, "is_superuser", False)
+        # Resolver inventario server-side.
+        # - via_jwt + usuario normal: sucursal del JWT/perfil (se ignora
+        #   cualquier sucursal_id/id_inventario enviado).
+        # - via_jwt + staff/superuser: override explícito con sucursal_id;
+        #   el inventario es el primero de esa sucursal por id.
+        # - legacy (sin via_jwt, tests): se respeta id_inventario del payload
+        #   para compatibilidad interna.
+        is_staff = es_staff(user)
         inventario = None
         if via_jwt:
-            if is_staff and "id_inventario" in data and data["id_inventario"] is not None:
-                inventario = Inventario.objects.filter(id=data['id_inventario']).first()
+            if is_staff and "sucursal_id" in data and data["sucursal_id"] is not None:
+                try:
+                    suc_id = int(data["sucursal_id"])
+                except (TypeError, ValueError):
+                    raise ValueError("sucursal_id debe ser entero")
+                from sucursales.models import Sucursal
+                if not Sucursal.objects.filter(id=suc_id).exists():
+                    raise ValueError(f"Sucursal con id {suc_id} no encontrada")
+                inventario = Inventario.objects.filter(
+                    id_sucursal_id=suc_id
+                ).order_by("id").first()
                 if not inventario:
-                    raise ValueError(f"Inventario con id {data['id_inventario']} no encontrado")
+                    raise ValueError(f"La sucursal {suc_id} no tiene un inventario asignado")
             else:
                 try:
                     inventario = self._resolve_inventario_for_user(user)
                 except ValueError as e:
                     if is_staff:
-                        raise ValueError(str(e) + " (staff: envíe id_inventario explícito)")
+                        raise ValueError(str(e) + " (staff: envíe sucursal_id explícito)")
                     raise
         else:
             if "id_inventario" not in data or data["id_inventario"] is None:

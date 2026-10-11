@@ -163,6 +163,8 @@ class TestDeleteVentaRestauraStock:
     def test_api_delete_venta_restaura_stock(
         self, auth_client, user, inventario, perfil
     ):
+        perfil.rol = "encargado"
+        perfil.save(update_fields=["rol"])
         from tests.factories import ProductoFactory
 
         prod = ProductoFactory(precio_venta=Decimal("100.00"))
@@ -177,16 +179,15 @@ class TestDeleteVentaRestauraStock:
         )
         mp = MetodoPagoFactory()
         resp = auth_client.post(
-            "/api/ventas/", {"id_metodoPago": mp.id}, format="json"
+            "/api/ventas/",
+            {
+                "id_metodoPago": mp.id,
+                "detalles": [{"producto": prod.id, "cantidad": 2}],
+            },
+            format="json",
         )
         assert resp.status_code == 201
         venta_id = resp.data["id"]
-        d = auth_client.post(
-            "/api/detalleventa/",
-            {"id_producto": prod.id, "id_venta": venta_id, "cantidad": 2},
-            format="json",
-        )
-        assert d.status_code == 201
         assert DetalleInventarioService().get_stock(prod.id, inventario.id) == 8
 
         dele = auth_client.delete(f"/api/ventas/{venta_id}/")

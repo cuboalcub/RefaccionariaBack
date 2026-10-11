@@ -91,11 +91,17 @@ python manage.py runserver
 - `GET /api/inventarios/mi-sucursal/` devuelve el inventario de la sucursal del usuario autenticado, agrupado por producto con su stock actual.
 
 ### Ventas
-- `POST /api/ventas/` **ignora** `total`, `id_usuario` e `id_inventario` enviados por el cliente. `id_usuario` e `id_inventario` se toman automáticamente del JWT/perfil (`Authorization: Bearer <access_token>` → `Perfil.sucursal → Inventario`). Solo recibe `id_metodoPago`. El total se calcula automáticamente sumando los `subtotal` de sus detalles (`POST /api/detalleventa/`). Staff/superuser puede enviar `id_inventario` como override explícito.
-- `POST /api/detalle/` recibe `id_producto`, `id_venta`, `cantidad`; valida el stock contra el inventario de la venta y registra automáticamente una salida en `DetalleInventario` (`MovimientoInventario` SALIDA). Al borrar/ajustar el detalle, la salida se revierte.
+- `POST /api/ventas/` **ignora** `total`, `id_usuario` e `id_inventario` enviados por el cliente. `id_usuario` y sucursal se toman automáticamente del JWT/perfil (`Authorization: Bearer <access_token>` → `Perfil.sucursal → Inventario`). Solo recibe `id_metodoPago` (más `detalles` opcional para creación atómica). El total se calcula automáticamente sumando los `subtotal` de sus detalles. Staff/superuser puede enviar `sucursal_id` como override explícito. Las respuestas exponen `id_sucursal` (ya no `id_inventario`) y `GET /api/ventas/` filtra por `sucursal_id` (staff) en vez de `id_inventario`.
+- `POST /api/detalleventa/` (crear) está **deprecado** → `410 Gone`: crear siempre con `POST /api/ventas/` + `detalles` (atómico). `GET/PUT/DELETE` por unidad siguen vigentes; al ajustar/borrar el detalle, la salida se revierte (con locks de venta + stock).
+- `DetalleInventario.id_detalle_venta` es `PROTECT`: el borrado directo por ORM/shell de detalles con salida vinculada falla en vez de dejar huérfanos; borrar siempre vía servicios.
 - El `subtotal` de cada detalle se calcula **en el servidor** como `precio_venta * cantidad` del producto (se ignora cualquier `subtotal` enviado por el cliente).
 
 ### Autenticación
 - La mayoría de los endpoints requieren el header `Authorization: Bearer <access_token>` (JWT).
-- Públicos: `POST /api/login` y `POST /api/users` (registro).
+- Público: `POST /api/login`. El registro es cerrado: `POST /api/users` exige encargado (crea cajeros de su sucursal) o staff.
 - `DELETE /api/users/<id>` solo para usuarios staff.
+
+### Roles y sucursales
+- `Perfil.rol`: `cajero` (default) / `encargado` / `admin`. `is_staff` implica todo (`is_superuser` la implica). Sin perfil el rol es `cajero`.
+- Matriz: cajero vende y lee; encargado además anula ventas, escribe inventario/bulk y precios, ve reporte y gestiona usuarios de su sucursal (crear cajeros, modificar datos/password/activo; no borra ni cambia roles); admin además gestiona inventarios y sucursales. El login expone `rol`; el registro y `PUT /api/perfil/` lo ignoran (sin auto-escalación; el rol se asigna por shell/admin).
+- Todo está acotado por sucursal (JWT/perfil, staff con override): otra sucursal → 403, sin sucursal → 400. Sin permiso de rol → 403. Movimientos y lectura de catálogos siguen globales.

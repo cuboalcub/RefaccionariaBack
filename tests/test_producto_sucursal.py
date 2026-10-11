@@ -28,8 +28,11 @@ from tests.factories import (
 )
 
 
-def _auth():
+def _auth(rol="cajero"):
+    from usuario.models import Perfil
+
     user = UserFactory()
+    Perfil.objects.create(usuario=user, rol=rol)
     client = APIClient()
     client.force_authenticate(user=user)
     return client
@@ -350,7 +353,7 @@ class TestProductoControllers:
         assert r.status_code == 400
 
     def test_detail_crud(self):
-        c = _auth()
+        c = _auth("encargado")
         pid = c.post("/api/productos/", _producto_payload(), format="json").json()["id"]
         assert c.get(f"/api/productos/{pid}/").status_code == 200
         assert c.put(f"/api/productos/{pid}/", {"marca": "M2"}, format="json").status_code == 200
@@ -367,7 +370,7 @@ class TestProductoControllers:
         assert c.get("/api/productos/codigo-barras/").status_code == 400
 
     def test_tipo_controller_crud(self):
-        c = _auth()
+        c = _auth("encargado")
         assert c.get("/api/tipos/").status_code == 200
         tid = c.post("/api/tipos/", {"nombre": "T1"}, format="json").json()["id"]
         assert c.post("/api/tipos/", {"nombre": "T1"}, format="json").status_code == 201
@@ -380,7 +383,7 @@ class TestProductoControllers:
         assert c.delete("/api/tipos/999999/").status_code == 404
 
     def test_proveedor_controller_crud(self):
-        c = _auth()
+        c = _auth("encargado")
         assert c.get("/api/proveedores/").status_code == 200
         payload = {"nombre": "P1", "direccion": "D1", "telefono": "5551", "correo": "p1@m.com"}
         pid = c.post("/api/proveedores/", payload, format="json").json()["id"]
@@ -414,7 +417,7 @@ class TestSucursal:
         assert str(SucursalFactory(ubicacion="UbiStr")) == "UbiStr"
 
     def test_controller_crud(self):
-        c = _auth()
+        c = _auth("admin")
         assert c.get("/api/sucursales/").status_code == 200
         sid = c.post("/api/sucursales/", {"ubicacion": "S1"}, format="json").json()["id"]
         assert c.post("/api/sucursales/", {"ubicacion": "S1"}, format="json").status_code == 201

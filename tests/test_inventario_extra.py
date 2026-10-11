@@ -857,11 +857,13 @@ class TestModelsStr:
 
 @pytest.mark.django_db
 class TestInventarioControllers:
-    def test_list_create_detail(self, auth_client):
-        suc = SucursalFactory()
+    def test_list_create_detail(self, auth_client, perfil):
+        perfil.rol = "admin"
+        perfil.save(update_fields=["rol"])
+        own = perfil.id_sucursal_id
         r = auth_client.post(
             "/api/inventarios/",
-            {"id_sucursal": suc.id, "descripcion": "Norte"},
+            {"id_sucursal": own, "descripcion": "Norte"},
             format="json",
         )
         assert r.status_code == 201, r.content
@@ -877,13 +879,18 @@ class TestInventarioControllers:
         r = auth_client.get("/api/inventarios/99999/")
         assert r.status_code == 404
 
-    def test_create_400(self, auth_client):
+    def test_create_sin_sucursal_usa_propia(self, auth_client, perfil):
+        perfil.rol = "admin"
+        perfil.save(update_fields=["rol"])
         r = auth_client.post(
-            "/api/inventarios/", {"descripcion": "Sin suc"}, format="json"
+            "/api/inventarios/", {"descripcion": "Propio"}, format="json"
         )
-        assert r.status_code == 400
+        assert r.status_code == 201, r.content
+        assert r.data["id_sucursal"] == perfil.id_sucursal_id
 
-    def test_movimiento_list_create_detail(self, auth_client):
+    def test_movimiento_list_create_detail(self, auth_client, perfil):
+        perfil.rol = "encargado"
+        perfil.save(update_fields=["rol"])
         r = auth_client.post(
             "/api/movimientos-inventario/",
             {"tipo": "ENTRADA", "cantidad": 5, "razon": "Compra"},
@@ -895,8 +902,10 @@ class TestInventarioControllers:
         assert auth_client.get(f"/api/movimientos-inventario/{mid}/").status_code == 200
         assert auth_client.get("/api/movimientos-inventario/99999/").status_code == 404
 
-    def test_detalle_list_create_detail_bulk(self, auth_client):
-        inv = InventarioFactory()
+    def test_detalle_list_create_detail_bulk(self, auth_client, perfil):
+        perfil.rol = "encargado"
+        perfil.save(update_fields=["rol"])
+        inv = InventarioFactory(id_sucursal=perfil.id_sucursal)
         prod = ProductoFactory()
         r = auth_client.post(
             "/api/detalles-inventario/",
@@ -957,9 +966,11 @@ class TestInventarioControllers:
 
 @pytest.mark.django_db
 class TestPrecioControllers:
-    def test_list_create_detail(self, auth_client):
+    def test_list_create_detail(self, auth_client, perfil):
+        perfil.rol = "encargado"
+        perfil.save(update_fields=["rol"])
         prod = ProductoFactory()
-        suc = SucursalFactory()
+        suc = perfil.id_sucursal
         r = auth_client.post(
             "/api/precios-sucursal/",
             {
@@ -975,9 +986,9 @@ class TestPrecioControllers:
         assert auth_client.get(f"/api/precios-sucursal/{pid}/").status_code == 200
         assert auth_client.get("/api/precios-sucursal/99999/").status_code == 404
 
-    def test_activo_ok_400_404(self, auth_client):
+    def test_activo_ok_400_404(self, auth_client, perfil):
         prod = ProductoFactory()
-        suc = SucursalFactory()
+        suc = perfil.id_sucursal
         PrecioSucursalService().create(
             {"id_producto": prod.id, "id_sucursal": suc.id, "precio_venta": "60.00"}
         )
@@ -999,9 +1010,9 @@ class TestPrecioControllers:
         )
         assert r.status_code == 404
 
-    def test_historial_ok_400(self, auth_client):
+    def test_historial_ok_400(self, auth_client, perfil):
         prod = ProductoFactory()
-        suc = SucursalFactory()
+        suc = perfil.id_sucursal
         PrecioSucursalService().create(
             {"id_producto": prod.id, "id_sucursal": suc.id, "precio_venta": "61.00"}
         )
