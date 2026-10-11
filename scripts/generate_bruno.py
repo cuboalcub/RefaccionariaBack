@@ -26,7 +26,33 @@ FRAMEWORK_ROUTES = [
             "username": "admin",
             "password": "password123",
         },
-        "docs": "Autentica al usuario y devuelve tokens refresh/access. Guarda el access token en {{token}} automáticamente.",
+        "docs": "Autentica al usuario y devuelve tokens refresh/access. Guarda el access token en {{token}} automáticamente. user: {id, username, isadmin, isstaff, rol}. La sucursal se resuelve server-side desde el Perfil.",
+    },
+    {
+        "folder": "Auth",
+        "name": "Login Encargado (ejemplo)",
+        "method": "POST",
+        "path": "/api/login",
+        "auth": False,
+        "query": [],
+        "body": {
+            "username": "encargado.suc1",
+            "password": "testpass123",
+        },
+        "docs": "Ejemplo de login con rol encargado (gestiona usuarios de su sucursal, ve reporte, escribe inventario/precios).",
+    },
+    {
+        "folder": "Auth",
+        "name": "Login Admin (ejemplo)",
+        "method": "POST",
+        "path": "/api/login",
+        "auth": False,
+        "query": [],
+        "body": {
+            "username": "admin.general",
+            "password": "testpass123",
+        },
+        "docs": "Ejemplo de login admin (acceso global + overrides con sucursal_id).",
         "post_response": 'if (res.body.access) {\n  bru.setEnvVar("token", res.body.access);\n}\nif (res.body.refresh) {\n  bru.setEnvVar("refresh_token", res.body.refresh);\n}',
     },
     {
@@ -56,7 +82,7 @@ FRAMEWORK_ROUTES = [
             "password": "clave_segura",
             "id_sucursal": 1,
         },
-        "docs": "Registra un nuevo usuario (público, no requiere token). Si envía id_sucursal, se crea su Perfil con esa sucursal.",
+        "docs": "Registro CERRADO: requiere encargado (crea cajeros de su sucursal; rol/sucursal enviados se ignoran) o staff. Anónimo -> 401.",
     },
     # ---- Usuarios ----
     {
@@ -67,14 +93,14 @@ FRAMEWORK_ROUTES = [
         "auth": True,
         "query": [],
         "body": None,
-        "docs": "Devuelve la lista de usuarios registrados. Requiere token.",
+        "docs": "Lista usuarios de TU sucursal (encargado+) o todos (staff). Requiere permiso usuarios.gestionar.",
     },
     {
         "folder": "Usuarios",
         "name": "Crear Usuario",
         "method": "POST",
         "path": "/api/users",
-        "auth": False,
+        "auth": True,
         "query": [],
         "body": {
             "username": "nuevo_usuario",
@@ -84,7 +110,7 @@ FRAMEWORK_ROUTES = [
             "password": "clave_segura",
             "id_sucursal": 1,
         },
-        "docs": "Registra un nuevo usuario (público, no requiere token). Si envía id_sucursal, se crea su Perfil con esa sucursal.",
+        "docs": "Registro CERRADO (requiere token de encargado/staff). Encargado: crea cajeros de su sucursal (ignora id_sucursal/rol). Staff: acepta id_sucursal + rol validados.",
     },
     {
         "folder": "Usuarios",
@@ -819,7 +845,7 @@ FRAMEWORK_ROUTES = [
         "auth": True,
         "query": [],
         "body": None,
-        "docs": "Devuelve todas las ventas.",
+        "docs": "Lista ventas de TU sucursal (JWT). Staff: ?sucursal_id=&page=&page_size=. Sin id_inventario; respuestas con id_sucursal.",
     },
     {
         "folder": "Ventas",
@@ -830,8 +856,11 @@ FRAMEWORK_ROUTES = [
         "query": [],
         "body": {
             "id_metodoPago": 1,
+            "detalles": [
+                {"producto": 22, "cantidad": 2},
+            ],
         },
-        "docs": "Crea una venta con total 0. id_usuario e id_inventario se derivan del JWT/perfil (Perfil.sucursal -> Inventario). Para usuarios normales se ignora id_inventario si se envía; staff/superuser puede enviar id_inventario como override. El total se calcula sumando los subtotales de sus detalles.",
+        "docs": "Crea una venta ATÓMICA (todo o nada) con cabecera + detalles. Sin detalles: venta vacía total 0 (legacy). Sucursal/inventario del JWT; staff override con sucursal_id. Respuesta con id_sucursal.",
     },
     {
         "folder": "Ventas",
@@ -863,7 +892,7 @@ FRAMEWORK_ROUTES = [
         "auth": True,
         "query": [],
         "body": None,
-        "docs": "Elimina una venta por su id.",
+        "docs": "Elimina una venta y revierte sus efectos (stock restaurado, movimientos SALIDA eliminados, todo en una transacción). Requiere ventas.anular (encargado+).",
     },
     # ---- DetalleVenta ----
     {
@@ -888,7 +917,7 @@ FRAMEWORK_ROUTES = [
             "id_venta": 1,
             "cantidad": 1,
         },
-        "docs": "Crea un detalle de venta, valida que el producto tenga stock>0 en el inventario/sucursal de la venta y que el usuario pertenezca a la misma sucursal (bloqueo cross-sucursal; staff bypass), registra una salida automática (MovimientoInventario SALIDA + DetalleInventario con id_detalle_venta) y recalcula el total. Error 400 si producto no está en inventario (stock 0) o cross-sucursal.",
+        "docs": "DEPRECADO: responde 410 Gone. Crear siempre con POST /api/ventas/ + detalles. GET/PUT/DELETE por unidad siguen vigentes.",
     },
     {
         "folder": "DetalleVenta",
