@@ -715,7 +715,9 @@ class TestClienteAPI:
         assert api_client.put("/api/clientes/1/", {}).status_code == 401
         assert api_client.delete("/api/clientes/1/").status_code == 401
 
-    def test_crud(self, auth_client, sucursal):
+    def test_crud(self, auth_client, perfil, sucursal):
+        perfil.rol = "encargado"
+        perfil.save(update_fields=["rol"])
         r = auth_client.post("/api/clientes/", self._payload(sucursal), format="json")
         assert r.status_code == 201
         cid = r.data["id"]
@@ -730,7 +732,9 @@ class TestClienteAPI:
         r = jwt_client.post("/api/clientes/", self._payload(sucursal), format="json")
         assert r.status_code == 201
 
-    def test_validaciones(self, auth_client, sucursal):
+    def test_validaciones(self, auth_client, perfil, sucursal):
+        perfil.rol = "encargado"
+        perfil.save(update_fields=["rol"])
         bad = {"nombre": "A", "apellido_paterno": "B", "telefono": "1"}
         assert auth_client.post("/api/clientes/", bad, format="json").status_code == 400
         bad2 = dict(bad, id_sucursal=99999)

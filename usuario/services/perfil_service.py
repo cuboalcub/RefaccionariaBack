@@ -40,4 +40,7 @@ class PerfilService(BaseService):
             "id": instance.id,
             "id_usuario": instance.usuario_id,
             "id_sucursal": instance.id_sucursal_id,
+            # Solo lectura: el rol no se modifica por PUT /api/perfil/
+            # (update_by_usuario lo ignora para evitar auto-escalación).
+            "rol": getattr(instance, "rol", "cajero") or "cajero",
         }

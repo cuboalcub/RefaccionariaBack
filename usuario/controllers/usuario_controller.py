@@ -3,6 +3,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated, IsAdminUser
 
+from repository.permissions import exigir_permiso
 from usuario.services.usuario_services import UserService
 
 
@@ -23,25 +24,23 @@ class UserLoginView(APIView):
 
 
 class UserListCreateView(APIView):
+    # Registro cerrado: alta solo por encargado (su sucursal) o staff.
     permission_classes = [IsAuthenticated]
-
-    def get_permissions(self):
-        if self.request.method == "POST":
-            return [AllowAny()]
-        return super().get_permissions()
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.user_service = UserService()
 
     def get(self, request):
-        users = self.user_service.get_all_users()
+        exigir_permiso(request.user, "usuarios.gestionar")
+        users = self.user_service.get_all_users(actor=request.user)
         return Response(users, status=status.HTTP_200_OK)
 
     def post(self, request):
         try:
-            user_data = request.data
-            user = self.user_service.create_user(user_data)
+            exigir_permiso(request.user, "usuarios.gestionar")
+            user_data = dict(request.data)
+            user = self.user_service.create_user(user_data, actor=request.user)
             return Response(user, status=status.HTTP_201_CREATED)
         except ValueError as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
@@ -55,14 +54,16 @@ class UserDetailView(APIView):
         self.user_service = UserService()
 
     def get(self, request, user_id):
-        user = self.user_service.get_user_by_id(user_id)
+        exigir_permiso(request.user, "usuarios.gestionar")
+        user = self.user_service.get_user_by_id(user_id, actor=request.user)
         if user:
             return Response(user, status=status.HTTP_200_OK)
         return Response({"error": "Usuario no encontrado"}, status=status.HTTP_404_NOT_FOUND)
 
     def put(self, request, user_id):
         try:
-            updated_user = self.user_service.update_user(user_id, request.data)
+            exigir_permiso(request.user, "usuarios.gestionar")
+            updated_user = self.user_service.update_user(user_id, request.data, actor=request.user)
             if updated_user:
                 return Response(updated_user, status=status.HTTP_200_OK)
             return Response({"error": "Usuario no encontrado"}, status=status.HTTP_404_NOT_FOUND)

@@ -8,13 +8,17 @@ from repository.base_controller import BaseDetailController
 
 from producto.services.producto_service import ProductoService
 from repository.base_controller import BaseDetailController, BaseListController
+from repository.permissions import exigir_permiso
 
 
 class ProductoListCreateView(BaseListController):
+    permiso_post = "catalogos.crear"
+
     def __init__(self):
         super().__init__(ProductoService)
 
     def get(self, request):
+        exigir_permiso(request.user, "catalogos.leer")
         categoria = request.query_params.get("categoria")
         query = request.query_params.get("query")
         page_param = request.query_params.get("page")
@@ -67,6 +71,7 @@ class ProductoPorCodigoBarrasView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        exigir_permiso(request.user, "catalogos.leer")
         codigo_barras = request.query_params.get("codigo_barras")
         if not codigo_barras:
             return Response(
@@ -82,5 +87,9 @@ class ProductoPorCodigoBarrasView(APIView):
 
 
 class ProductoDetailView(BaseDetailController):
+    permiso_get = "catalogos.leer"
+    permiso_put = "catalogos.escribir"
+    permiso_delete = "catalogos.escribir"
+
     def __init__(self):
         super().__init__(ProductoService)

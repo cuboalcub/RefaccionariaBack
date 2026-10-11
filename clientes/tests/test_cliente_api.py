@@ -5,6 +5,7 @@ from rest_framework.test import APIClient
 
 from clientes.models import Cliente
 from sucursales.models import Sucursal
+from usuario.models import Perfil
 
 
 @override_settings(ALLOWED_HOSTS=['*'])
@@ -13,6 +14,7 @@ class ClienteAPITest(TestCase):
         self.client = APIClient()
         self.user = User.objects.create_user(username='testuser', password='testpass123')
         self.client.force_authenticate(user=self.user)
+        Perfil.objects.create(usuario=self.user, rol='encargado')
         self.sucursal = Sucursal.objects.create(ubicacion='Sucursal Centro')
         self.cliente_data = {
             'nombre': 'Juan',

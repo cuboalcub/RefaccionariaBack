@@ -57,7 +57,7 @@ class UserControllerTestCase(TestCase):
         mock_get_all.return_value = [{"id": 1, "username": "user1"}]
 
         request = self.factory.get("/usuarios/")
-        force_authenticate(request, user=self.user)
+        force_authenticate(request, user=self.staff)
         response = UserListCreateView.as_view()(request)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -69,6 +69,7 @@ class UserControllerTestCase(TestCase):
         mock_create_user.return_value = {"id": 1, "username": "nuevo"}
 
         request = self.factory.post("/usuarios/", {"username": "nuevo", "password": "123"})
+        force_authenticate(request, user=self.staff)
         response = UserListCreateView.as_view()(request)
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
@@ -80,6 +81,7 @@ class UserControllerTestCase(TestCase):
         mock_create_user.side_effect = ValueError("Datos inválidos")
 
         request = self.factory.post("/usuarios/", {"username": ""})
+        force_authenticate(request, user=self.staff)
         response = UserListCreateView.as_view()(request)
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -99,7 +101,7 @@ class UserControllerTestCase(TestCase):
         mock_get_user.return_value = {"id": 1, "username": "testuser"}
 
         request = self.factory.get("/usuarios/1/")
-        force_authenticate(request, user=self.user)
+        force_authenticate(request, user=self.staff)
         response = UserDetailView.as_view()(request, user_id=1)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -111,7 +113,7 @@ class UserControllerTestCase(TestCase):
         mock_get_user.return_value = None
 
         request = self.factory.get("/usuarios/99/")
-        force_authenticate(request, user=self.user)
+        force_authenticate(request, user=self.staff)
         response = UserDetailView.as_view()(request, user_id=99)
 
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
@@ -123,7 +125,7 @@ class UserControllerTestCase(TestCase):
         mock_update.return_value = {"id": 1, "username": "modificado"}
 
         request = self.factory.put("/usuarios/1/", {"username": "modificado"})
-        force_authenticate(request, user=self.user)
+        force_authenticate(request, user=self.staff)
         response = UserDetailView.as_view()(request, user_id=1)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -135,7 +137,7 @@ class UserControllerTestCase(TestCase):
         mock_update.side_effect = ValueError("Error al actualizar")
 
         request = self.factory.put("/usuarios/1/", {"username": ""})
-        force_authenticate(request, user=self.user)
+        force_authenticate(request, user=self.staff)
         response = UserDetailView.as_view()(request, user_id=1)
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
