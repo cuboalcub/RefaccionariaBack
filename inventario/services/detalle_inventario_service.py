@@ -7,10 +7,21 @@ from repository.base_service import BaseService
 from repository.exceptions import NotFoundError
 
 
+def _programar_alerta(producto_id, inventario_id):
+    """Programa la evaluación de alertas de stock tras el commit.
+
+    Importación diferida para no acoplar el inventario a la app de
+    notificaciones a nivel de módulo. La evaluación corre en on_commit y
+    sus fallos solo quedan en el log (ver stock_alerts).
+    """
+    from notifications.services.stock_alerts import programar_evaluacion
+
+    programar_evaluacion(producto_id, inventario_id)
+
+
 class DetalleInventarioService(BaseService):
     def __init__(self):
         super().__init__(model=DetalleInventario, repository=DetalleInventarioRepository())
-
     def _validar(self, data):
         if "id_producto" not in data or data["id_producto"] is None:
             raise ValueError("Faltan campos obligatorios: id_producto")
@@ -90,7 +101,9 @@ class DetalleInventarioService(BaseService):
         else:
             data.pop("id_proveedor", None)
 
-        return super().create(data)
+        resultado = super().create(data)
+        _programar_alerta(data["id_producto"].id, data["id_inventario"].id)
+        return resultado
 
     @transaction.atomic
     def update(self, id, data):
@@ -152,7 +165,12 @@ class DetalleInventarioService(BaseService):
             else:
                 data["id_proveedor"] = Proveedor.objects.get(id=data["id_proveedor"])
 
-        return super().update(id, data)
+        resultado = super().update(id, data)
+        # El detalle pudo cambiar de producto/inventario: se evalúan ambos
+        # pares (el par anterior conserva sus valores en `detalle`).
+        _programar_alerta(detalle.id_producto_id, detalle.id_inventario_id)
+        _programar_alerta(data["id_producto"].id, data["id_inventario"].id)
+        return resultado
 
     def delete(self, id, user=None):
         detalle = self.repository.get_by_id(id)
@@ -167,13 +185,15 @@ class DetalleInventarioService(BaseService):
             razon="Venta",
             observaciones=f"Venta {detalle_venta.id_venta_id}",
         )
-        return self.repository.create({
+        instance = self.repository.create({
             "id_producto": producto,
             "id_inventario": inventario,
             "id_movimiento": movimiento,
             "id_detalle_venta": detalle_venta,
             "cantidad": cantidad,
         })
+        _programar_alerta(producto.id, inventario.id)
+        return instance
 
     def ajustar_salida_por_venta(self, detalle_venta, nueva_cantidad, producto=None, inventario=None):
         detalle = self.repository.get_by_detalle_venta(detalle_venta.id)
@@ -191,6 +211,8 @@ class DetalleInventarioService(BaseService):
             )
 
         detalle.cantidad = nueva_cantidad
+        previo_producto_id = detalle.id_producto_id
+        previo_inventario_id = detalle.id_inventario_id
         detalle.id_producto = producto
         detalle.id_inventario = inventario
         detalle.save(update_fields=["cantidad", "id_producto", "id_inventario", "update_at"])
@@ -202,15 +224,20 @@ class DetalleInventarioService(BaseService):
                 mov.save(update_fields=["cantidad"])
         except Exception:
             pass
+        _programar_alerta(previo_producto_id, previo_inventario_id)
+        _programar_alerta(producto.id, inventario.id)
         return detalle
 
     def revertir_salida_por_venta(self, detalle_venta):
         detalle = self.repository.get_by_detalle_venta(detalle_venta.id)
         if not detalle:
             return None
+        producto_id = detalle.id_producto_id
+        inventario_id = detalle.id_inventario_id
         movimiento = detalle.id_movimiento
         detalle.delete()
         movimiento.delete()
+        _programar_alerta(producto_id, inventario_id)
         return True
 
     def get_inventario_por_sucursal(self, sucursal_id):
@@ -400,6 +427,8 @@ class DetalleInventarioService(BaseService):
             instance = self.repository.create(cur)
             resultados.append(self._to_dict(instance))
 
+        for item in resultados:
+            _programar_alerta(item["id_producto"], item["id_inventario"])
         return resultados
 
     def _to_dict(self, instance):

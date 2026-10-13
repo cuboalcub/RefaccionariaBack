@@ -61,6 +61,7 @@ INSTALLED_APPS = [
     "sucursales",
     "inventario",
     "clientes",
+    "notifications",
     "corsheaders",
 ]
 
@@ -169,6 +170,12 @@ MEDIA_ROOT = BASE_DIR / "media"
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# --- Notificaciones ---
+# Umbral de stock bajo: LOW_STOCK cuando 0 < stock < umbral; OUT_OF_STOCK
+# cuando stock == 0. Se valida en notifications.services.thresholds
+# (debe ser entero >= 2); el valor por defecto es 10.
+NOTIFICATIONS_LOW_STOCK_THRESHOLD = os.getenv("NOTIFICATIONS_LOW_STOCK_THRESHOLD", "10")
 
 # --- CORS ---
 # Configurable vía env var CORS_ALLOWED_ORIGINS (comma-separated).
