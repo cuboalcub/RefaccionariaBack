@@ -32,6 +32,7 @@ urlpatterns = [
     path('api/', include('sucursales.urls')),
     path('api/', include('inventario.urls')),
     path('api/', include('clientes.urls')),
+    path('api/', include('notifications.urls')),
 ]
 
 if settings.DEBUG:
