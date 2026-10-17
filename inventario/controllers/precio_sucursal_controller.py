@@ -14,19 +14,24 @@ from repository.permissions import (
     sucursal_de_usuario,
 )
 
+PERM_PRECIOS_LEER = "precios.leer"
+PERM_PRECIOS_ESCRIBIR = "precios.escribir"
+MSG_SIN_SUCURSAL = "El usuario no tiene una sucursal asignada"
+MSG_ID_SUCURSAL_ENTERO = "id_sucursal debe ser entero"
+
 
 class PrecioSucursalListCreateView(BaseListController):
     def __init__(self):
         super().__init__(PrecioSucursalService)
 
     def get(self, request) -> Response:
-        exigir_permiso(request.user, "precios.leer")
+        exigir_permiso(request.user, PERM_PRECIOS_LEER)
         if es_staff(request.user):
             return super().get(request)
         user_suc = sucursal_de_usuario(request.user)
         if user_suc is None:
             return Response(
-                {"error": "El usuario no tiene una sucursal asignada"},
+                {"error": MSG_SIN_SUCURSAL},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         return Response(
@@ -36,7 +41,7 @@ class PrecioSucursalListCreateView(BaseListController):
 
     def post(self, request) -> Response:
         try:
-            exigir_permiso(request.user, "precios.escribir")
+            exigir_permiso(request.user, PERM_PRECIOS_ESCRIBIR)
             data = dict(request.data)
             if not es_staff(request.user):
                 # Precios solo para la sucursal propia; otra -> 403,
@@ -45,7 +50,7 @@ class PrecioSucursalListCreateView(BaseListController):
                     suc_id = entero_o_none(data.get("id_sucursal"))
                     if suc_id is None:
                         return Response(
-                            {"error": "id_sucursal debe ser entero"},
+                            {"error": MSG_ID_SUCURSAL_ENTERO},
                             status=status.HTTP_400_BAD_REQUEST,
                         )
                     exigir_misma_sucursal(request.user, suc_id, "precios")
@@ -54,7 +59,7 @@ class PrecioSucursalListCreateView(BaseListController):
                     user_suc = sucursal_de_usuario(request.user)
                     if user_suc is None:
                         return Response(
-                            {"error": "El usuario no tiene una sucursal asignada"},
+                            {"error": MSG_SIN_SUCURSAL},
                             status=status.HTTP_400_BAD_REQUEST,
                         )
                     data["id_sucursal"] = user_suc
@@ -83,13 +88,13 @@ class PrecioSucursalDetailView(BaseDetailController):
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
     def get(self, request, pk: int) -> Response:
-        err = self._autorizado_o_error(request, pk, "precios.leer")
+        err = self._autorizado_o_error(request, pk, PERM_PRECIOS_LEER)
         if err is not None:
             return err
         return super().get(request, pk)
 
     def put(self, request, pk: int) -> Response:
-        err = self._autorizado_o_error(request, pk, "precios.escribir")
+        err = self._autorizado_o_error(request, pk, PERM_PRECIOS_ESCRIBIR)
         if err is not None:
             return err
         try:
@@ -104,7 +109,7 @@ class PrecioSucursalDetailView(BaseDetailController):
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
     def delete(self, request, pk: int) -> Response:
-        err = self._autorizado_o_error(request, pk, "precios.escribir")
+        err = self._autorizado_o_error(request, pk, PERM_PRECIOS_ESCRIBIR)
         if err is not None:
             return err
         return super().delete(request, pk)
@@ -114,14 +119,14 @@ class PrecioActivoView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        exigir_permiso(request.user, "precios.leer")
+        exigir_permiso(request.user, PERM_PRECIOS_LEER)
         producto_id = request.query_params.get('id_producto') or request.query_params.get('producto_id')
         sucursal_param = request.query_params.get('id_sucursal') or request.query_params.get('sucursal_id')
         if not es_staff(request.user):
             # Sucursal propia del JWT; el parámetro se ignora.
             user_suc = sucursal_de_usuario(request.user)
             if user_suc is None:
-                return Response({"error": "El usuario no tiene una sucursal asignada"}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({"error": MSG_SIN_SUCURSAL}, status=status.HTTP_400_BAD_REQUEST)
             sucursal_id = user_suc
         else:
             if not sucursal_param:
@@ -129,7 +134,7 @@ class PrecioActivoView(APIView):
             try:
                 sucursal_id = int(sucursal_param)
             except ValueError:
-                return Response({"error": "id_sucursal debe ser entero"}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({"error": MSG_ID_SUCURSAL_ENTERO}, status=status.HTTP_400_BAD_REQUEST)
         if not producto_id:
             return Response({"error": "Debe enviar id_producto"}, status=status.HTTP_400_BAD_REQUEST)
         try:
@@ -147,14 +152,14 @@ class HistorialPrecioView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        exigir_permiso(request.user, "precios.leer")
+        exigir_permiso(request.user, PERM_PRECIOS_LEER)
         producto_id = request.query_params.get('id_producto') or request.query_params.get('producto_id')
         sucursal_param = request.query_params.get('id_sucursal') or request.query_params.get('sucursal_id')
         if not es_staff(request.user):
             # Sucursal propia del JWT; el parámetro se ignora.
             user_suc = sucursal_de_usuario(request.user)
             if user_suc is None:
-                return Response({"error": "El usuario no tiene una sucursal asignada"}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({"error": MSG_SIN_SUCURSAL}, status=status.HTTP_400_BAD_REQUEST)
             sucursal_id = user_suc
         else:
             if not sucursal_param:
@@ -162,7 +167,7 @@ class HistorialPrecioView(APIView):
             try:
                 sucursal_id = int(sucursal_param)
             except ValueError:
-                return Response({"error": "id_sucursal debe ser entero"}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({"error": MSG_ID_SUCURSAL_ENTERO}, status=status.HTTP_400_BAD_REQUEST)
         if not producto_id:
             return Response({"error": "Debe enviar id_producto"}, status=status.HTTP_400_BAD_REQUEST)
         try:

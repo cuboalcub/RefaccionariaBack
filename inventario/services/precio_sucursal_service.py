@@ -16,10 +16,18 @@ class PrecioSucursalService(BaseService):
         super().__init__(model=PrecioSucursal, repository=PrecioSucursalRepository())
 
     def _validar(self, data, partial=False):
-        required = ['id_producto', 'id_sucursal', 'precio_venta']
-        for f in required:
-            if not partial and (f not in data or data[f] is None):
+        self._validar_campos_requeridos(data, partial)
+        self._validar_precio(data)
+        self._validar_fks(data)
+
+    def _validar_campos_requeridos(self, data, partial):
+        if partial:
+            return
+        for f in ['id_producto', 'id_sucursal', 'precio_venta']:
+            if f not in data or data[f] is None:
                 raise ValueError(f"Faltan campos obligatorios: {f}")
+
+    def _validar_precio(self, data):
         if 'precio_venta' in data and data['precio_venta'] is not None:
             try:
                 pv = Decimal(str(data['precio_venta']))
@@ -27,6 +35,8 @@ class PrecioSucursalService(BaseService):
                 raise ValueError("precio_venta debe ser un número válido")
             if pv <= 0:
                 raise ValueError("precio_venta debe ser mayor a 0")
+
+    def _validar_fks(self, data):
         if 'id_producto' in data and data['id_producto'] is not None:
             if not Producto.objects.filter(id=data['id_producto']).exists():
                 raise ValueError("El producto indicado no existe")

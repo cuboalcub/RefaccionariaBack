@@ -3,21 +3,20 @@ from django.utils import timezone
 
 
 def seed_precios(apps, schema_editor):
-    Producto = apps.get_model('producto', 'Producto')
-    Sucursal = apps.get_model('sucursales', 'Sucursal')
-    PrecioSucursal = apps.get_model('inventario', 'PrecioSucursal')
-    productos = list(Producto.objects.all())
-    sucursales = list(Sucursal.objects.all())
+    producto = apps.get_model('producto', 'Producto')
+    sucursal = apps.get_model('sucursales', 'Sucursal')
+    precio_sucursal = apps.get_model('inventario', 'PrecioSucursal')
+    productos = list(producto.objects.all())
+    sucursales = list(sucursal.objects.all())
     if not productos or not sucursales:
         return
     now = timezone.now()
     objs = []
     for prod in productos:
         for suc in sucursales:
-            # evitar duplicado si ya existe
-            if PrecioSucursal.objects.filter(id_producto_id=prod.id, id_sucursal_id=suc.id, activo=True).exists():
+            if precio_sucursal.objects.filter(id_producto_id=prod.id, id_sucursal_id=suc.id, activo=True).exists():
                 continue
-            objs.append(PrecioSucursal(
+            objs.append(precio_sucursal(
                 id_producto_id=prod.id,
                 id_sucursal_id=suc.id,
                 precio_venta=prod.precio_venta,
@@ -25,12 +24,12 @@ def seed_precios(apps, schema_editor):
                 activo=True,
             ))
     if objs:
-        PrecioSucursal.objects.bulk_create(objs)
+        precio_sucursal.objects.bulk_create(objs)
 
 
 def reverse_seed(apps, schema_editor):
-    PrecioSucursal = apps.get_model('inventario', 'PrecioSucursal')
-    PrecioSucursal.objects.all().delete()
+    precio_sucursal = apps.get_model('inventario', 'PrecioSucursal')
+    precio_sucursal.objects.all().delete()
 
 
 class Migration(migrations.Migration):

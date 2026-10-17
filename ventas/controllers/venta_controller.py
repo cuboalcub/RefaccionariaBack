@@ -11,6 +11,8 @@ from repository.permissions import (
 from ventas.services.venta_service import VentaService
 from repository.base_controller import BaseListController, BaseDetailController
 
+PERM_VENTAS_VENDER = "ventas.vender"
+
 
 class VentaListController(BaseListController):
     def __init__(self):
@@ -18,7 +20,7 @@ class VentaListController(BaseListController):
 
     def get(self, request) -> Response:
         try:
-            exigir_permiso(request.user, "ventas.vender")
+            exigir_permiso(request.user, PERM_VENTAS_VENDER)
             page_param = request.query_params.get("page")
             page_size_param = request.query_params.get("page_size", 10)
             sucursal_param = request.query_params.get("sucursal_id")
@@ -66,7 +68,7 @@ class VentaListController(BaseListController):
             # id_usuario e id_inventario nunca vienen del cliente: el usuario
             # sale del JWT y el inventario se resuelve server-side.
             # staff/superuser puede enviar sucursal_id como override explícito.
-            exigir_permiso(request.user, "ventas.vender")
+            exigir_permiso(request.user, PERM_VENTAS_VENDER)
             data = dict(request.data)
             data.pop("id_usuario", None)
             data.pop("id_inventario", None)
@@ -104,7 +106,7 @@ class VentaDetailController(BaseDetailController):
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
     def get(self, request, pk: int) -> Response:
-        err = self._autorizado_o_error(request, pk, "ventas.vender")
+        err = self._autorizado_o_error(request, pk, PERM_VENTAS_VENDER)
         if err is not None:
             return err
         return super().get(request, pk)

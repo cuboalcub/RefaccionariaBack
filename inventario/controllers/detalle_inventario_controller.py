@@ -16,6 +16,8 @@ from repository.permissions import (
 from inventario.models import Inventario
 from inventario.services.detalle_inventario_service import DetalleInventarioService
 
+PERM_INVENTARIO_ESCRIBIR = "inventario.escribir"
+
 
 def _sucursal_de_inventario(inventario_id):
     """Sucursal del inventario o None si no existe."""
@@ -67,7 +69,7 @@ class DetalleInventarioListCreateView(BaseListController):
 
     def post(self, request) -> Response:
         try:
-            exigir_permiso(request.user, "inventario.escribir")
+            exigir_permiso(request.user, PERM_INVENTARIO_ESCRIBIR)
             data = dict(request.data)
             if not es_staff(request.user) and data.get("id_inventario") is not None:
                 inv_id = entero_o_none(data.get("id_inventario"))
@@ -115,7 +117,7 @@ class DetalleInventarioDetailView(BaseDetailController):
         return super().get(request, pk)
 
     def put(self, request, pk: int) -> Response:
-        err = self._autorizado_o_error(request, pk, "inventario.escribir")
+        err = self._autorizado_o_error(request, pk, PERM_INVENTARIO_ESCRIBIR)
         if err is not None:
             return err
         try:
@@ -130,7 +132,7 @@ class DetalleInventarioDetailView(BaseDetailController):
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
     def delete(self, request, pk: int) -> Response:
-        err = self._autorizado_o_error(request, pk, "inventario.escribir")
+        err = self._autorizado_o_error(request, pk, PERM_INVENTARIO_ESCRIBIR)
         if err is not None:
             return err
         return super().delete(request, pk)
@@ -141,7 +143,7 @@ class DetalleInventarioBulkCreateView(APIView):
 
     def post(self, request):
         try:
-            exigir_permiso(request.user, "inventario.escribir")
+            exigir_permiso(request.user, PERM_INVENTARIO_ESCRIBIR)
             service = DetalleInventarioService()
             # Soporta lista plana o dict con items/detalles
             data = request.data

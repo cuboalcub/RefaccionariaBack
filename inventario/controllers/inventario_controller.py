@@ -16,19 +16,23 @@ from repository.permissions import (
 from inventario.services.inventario_service import InventarioService
 from inventario.services.detalle_inventario_service import DetalleInventarioService
 
+PERM_INVENTARIO_VER = "inventario.ver"
+PERM_INVENTARIO_ADMIN = "inventario.admin"
+MSG_SIN_SUCURSAL = "El usuario no tiene una sucursal asignada"
+
 
 class InventarioListCreateView(BaseListController):
     def __init__(self):
         super().__init__(InventarioService)
 
     def get(self, request) -> Response:
-        exigir_permiso(request.user, "inventario.ver")
+        exigir_permiso(request.user, PERM_INVENTARIO_VER)
         if es_staff(request.user):
             return super().get(request)
         user_suc = sucursal_de_usuario(request.user)
         if user_suc is None:
             return Response(
-                {"error": "El usuario no tiene una sucursal asignada"},
+                {"error": MSG_SIN_SUCURSAL},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         return Response(
@@ -38,7 +42,7 @@ class InventarioListCreateView(BaseListController):
 
     def post(self, request) -> Response:
         try:
-            exigir_permiso(request.user, "inventario.admin")
+            exigir_permiso(request.user, PERM_INVENTARIO_ADMIN)
             data = dict(request.data)
             if not es_staff(request.user):
                 # Crear solo en la sucursal propia; otra sucursal -> 403,
@@ -56,7 +60,7 @@ class InventarioListCreateView(BaseListController):
                     user_suc = sucursal_de_usuario(request.user)
                     if user_suc is None:
                         return Response(
-                            {"error": "El usuario no tiene una sucursal asignada"},
+                            {"error": MSG_SIN_SUCURSAL},
                             status=status.HTTP_400_BAD_REQUEST,
                         )
                     data["id_sucursal"] = user_suc
@@ -85,13 +89,13 @@ class InventarioDetailView(BaseDetailController):
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
     def get(self, request, pk: int) -> Response:
-        err = self._autorizado_o_error(request, pk, "inventario.ver")
+        err = self._autorizado_o_error(request, pk, PERM_INVENTARIO_VER)
         if err is not None:
             return err
         return super().get(request, pk)
 
     def put(self, request, pk: int) -> Response:
-        err = self._autorizado_o_error(request, pk, "inventario.admin")
+        err = self._autorizado_o_error(request, pk, PERM_INVENTARIO_ADMIN)
         if err is not None:
             return err
         try:
@@ -106,7 +110,7 @@ class InventarioDetailView(BaseDetailController):
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
     def delete(self, request, pk: int) -> Response:
-        err = self._autorizado_o_error(request, pk, "inventario.admin")
+        err = self._autorizado_o_error(request, pk, PERM_INVENTARIO_ADMIN)
         if err is not None:
             return err
         return super().delete(request, pk)
@@ -116,62 +120,68 @@ class InventarioPorSucursalView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        exigir_permiso(request.user, "inventario.ver")
+        exigir_permiso(request.user, PERM_INVENTARIO_VER)
         perfil = getattr(request.user, "perfil", None)
         if not perfil or not perfil.id_sucursal_id:
             return Response(
-                {"error": "El usuario no tiene una sucursal asignada"},
+                {"error": MSG_SIN_SUCURSAL},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         data = DetalleInventarioService().get_inventario_por_sucursal(perfil.id_sucursal_id)
-
-        # Paginación opcional: ?page=1&page_size=10
         page_param = request.query_params.get("page")
-        if page_param is not None:
-            try:
-                page = int(page_param)
-                page_size = int(request.query_params.get("page_size", 10))
-            except ValueError:
-                return Response({"error": "page y page_size deben ser enteros"}, status=status.HTTP_400_BAD_REQUEST)
-            if page < 1 or page_size < 1:
-                return Response({"error": "page y page_size deben ser >= 1"}, status=status.HTTP_400_BAD_REQUEST)
+        if page_param is None:
+            return Response(data, status=status.HTTP_200_OK)
+        try:
+            page, page_size = self._leer_paginacion(request, page_param)
+        except ValueError as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        return self._paginar(data, page, page_size)
 
-            # Aplanar detalles para paginar si hay un solo inventario, sino paginar por inventario
-            # Si hay múltiples inventarios, paginamos cada uno y retornamos estructura paginada
-            if len(data) == 1:
-                inv = data[0]
-                total = len(inv["detalles"])
-                total_pages = (total + page_size - 1) // page_size if total else 1
-                if page > total_pages and total > 0:
-                    return Response({"error": f"page fuera de rango (1-{total_pages})"}, status=status.HTTP_400_BAD_REQUEST)
-                start = (page - 1) * page_size
-                end = start + page_size
-                paginated = inv["detalles"][start:end]
-                return Response({
-                    "total": total,
-                    "page": page,
-                    "page_size": page_size,
-                    "total_pages": total_pages,
-                    "id_inventario": inv["id_inventario"],
-                    "descripcion": inv["descripcion"],
-                    "id_sucursal": inv["id_sucursal"],
-                    "detalles": paginated,
-                }, status=status.HTTP_200_OK)
-            else:
-                # Múltiples inventarios: paginar lista de inventarios
-                total = len(data)
-                total_pages = (total + page_size - 1) // page_size
-                if page > total_pages and total > 0:
-                    return Response({"error": f"page fuera de rango (1-{total_pages})"}, status=status.HTTP_400_BAD_REQUEST)
-                start = (page - 1) * page_size
-                end = start + page_size
-                paginated_data = data[start:end]
-                return Response({
-                    "total": total,
-                    "page": page,
-                    "page_size": page_size,
-                    "total_pages": total_pages,
-                    "results": paginated_data,
-                }, status=status.HTTP_200_OK)
+    @staticmethod
+    def _leer_paginacion(request, page_param):
+        try:
+            page = int(page_param)
+            page_size = int(request.query_params.get("page_size", 10))
+        except ValueError:
+            raise ValueError("page y page_size deben ser enteros")
+        if page < 1 or page_size < 1:
+            raise ValueError("page y page_size deben ser >= 1")
+        return page, page_size
 
-        return Response(data, status=status.HTTP_200_OK)
+    def _paginar(self, data, page, page_size):
+        if len(data) == 1:
+            return self._paginar_unico(data[0], page, page_size)
+        return self._paginar_multiple(data, page, page_size)
+
+    @staticmethod
+    def _paginar_unico(inv, page, page_size):
+        total = len(inv["detalles"])
+        total_pages = (total + page_size - 1) // page_size if total else 1
+        if page > total_pages and total > 0:
+            return Response({"error": f"page fuera de rango (1-{total_pages})"}, status=status.HTTP_400_BAD_REQUEST)
+        start = (page - 1) * page_size
+        return Response({
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": total_pages,
+            "id_inventario": inv["id_inventario"],
+            "descripcion": inv["descripcion"],
+            "id_sucursal": inv["id_sucursal"],
+            "detalles": inv["detalles"][start:start + page_size],
+        }, status=status.HTTP_200_OK)
+
+    @staticmethod
+    def _paginar_multiple(data, page, page_size):
+        total = len(data)
+        total_pages = (total + page_size - 1) // page_size
+        if page > total_pages and total > 0:
+            return Response({"error": f"page fuera de rango (1-{total_pages})"}, status=status.HTTP_400_BAD_REQUEST)
+        start = (page - 1) * page_size
+        return Response({
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": total_pages,
+            "results": data[start:start + page_size],
+        }, status=status.HTTP_200_OK)

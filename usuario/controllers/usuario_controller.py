@@ -6,6 +6,9 @@ from rest_framework.permissions import AllowAny, IsAuthenticated, IsAdminUser
 from repository.permissions import exigir_permiso
 from usuario.services.usuario_service import UserService
 
+PERMISO_GESTIONAR_USUARIOS = "usuarios.gestionar"
+ERROR_USUARIO_NO_ENCONTRADO = "Usuario no encontrado"
+
 
 class UserLoginView(APIView):
     permission_classes = [AllowAny]
@@ -32,13 +35,13 @@ class UserListCreateView(APIView):
         self.user_service = UserService()
 
     def get(self, request):
-        exigir_permiso(request.user, "usuarios.gestionar")
+        exigir_permiso(request.user, PERMISO_GESTIONAR_USUARIOS)
         users = self.user_service.get_all_users(actor=request.user)
         return Response(users, status=status.HTTP_200_OK)
 
     def post(self, request):
         try:
-            exigir_permiso(request.user, "usuarios.gestionar")
+            exigir_permiso(request.user, PERMISO_GESTIONAR_USUARIOS)
             user_data = dict(request.data)
             user = self.user_service.create_user(user_data, actor=request.user)
             return Response(user, status=status.HTTP_201_CREATED)
@@ -54,19 +57,19 @@ class UserDetailView(APIView):
         self.user_service = UserService()
 
     def get(self, request, user_id):
-        exigir_permiso(request.user, "usuarios.gestionar")
+        exigir_permiso(request.user, PERMISO_GESTIONAR_USUARIOS)
         user = self.user_service.get_user_by_id(user_id, actor=request.user)
         if user:
             return Response(user, status=status.HTTP_200_OK)
-        return Response({"error": "Usuario no encontrado"}, status=status.HTTP_404_NOT_FOUND)
+        return Response({"error": ERROR_USUARIO_NO_ENCONTRADO}, status=status.HTTP_404_NOT_FOUND)
 
     def put(self, request, user_id):
         try:
-            exigir_permiso(request.user, "usuarios.gestionar")
+            exigir_permiso(request.user, PERMISO_GESTIONAR_USUARIOS)
             updated_user = self.user_service.update_user(user_id, request.data, actor=request.user)
             if updated_user:
                 return Response(updated_user, status=status.HTTP_200_OK)
-            return Response({"error": "Usuario no encontrado"}, status=status.HTTP_404_NOT_FOUND)
+            return Response({"error": ERROR_USUARIO_NO_ENCONTRADO}, status=status.HTTP_404_NOT_FOUND)
         except ValueError as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -76,4 +79,4 @@ class UserDetailView(APIView):
         deleted = self.user_service.delete_user(user_id)
         if deleted:
             return Response(status=status.HTTP_204_NO_CONTENT)
-        return Response({"error": "Usuario no encontrado"}, status=status.HTTP_404_NOT_FOUND)
+        return Response({"error": ERROR_USUARIO_NO_ENCONTRADO}, status=status.HTTP_404_NOT_FOUND)

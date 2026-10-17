@@ -57,41 +57,55 @@ def rol_de_usuario(user) -> str:
 # Matriz rol x acción (Fase 2). El scoping por sucursal es una capa
 # separada: el rol dice *qué* se puede hacer, la sucursal *dónde*.
 # is_staff implica todos los permisos (ver `puede`).
+PERM_VENTAS_VENDER = "ventas.vender"
+PERM_VENTAS_ANULAR = "ventas.anular"
+PERM_INVENTARIO_VER = "inventario.ver"
+PERM_INVENTARIO_ESCRIBIR = "inventario.escribir"
+PERM_INVENTARIO_ADMIN = "inventario.admin"
+PERM_PRECIOS_LEER = "precios.leer"
+PERM_PRECIOS_ESCRIBIR = "precios.escribir"
+PERM_REPORTE_VER = "reporte.ver"
+PERM_CATALOGOS_LEER = "catalogos.leer"
+PERM_CATALOGOS_CREAR = "catalogos.crear"
+PERM_CATALOGOS_ESCRIBIR = "catalogos.escribir"
+PERM_SUCURSALES_ADMIN = "sucursales.admin"
+PERM_USUARIOS_GESTIONAR = "usuarios.gestionar"
+
 PERMISOS_POR_ROL = {
     "cajero": {
-        "ventas.vender",
-        "inventario.ver",
-        "precios.leer",
-        "catalogos.leer",
-        "catalogos.crear",
+        PERM_VENTAS_VENDER,
+        PERM_INVENTARIO_VER,
+        PERM_PRECIOS_LEER,
+        PERM_CATALOGOS_LEER,
+        PERM_CATALOGOS_CREAR,
     },
     "encargado": {
-        "ventas.vender",
-        "ventas.anular",
-        "inventario.ver",
-        "inventario.escribir",
-        "precios.leer",
-        "precios.escribir",
-        "reporte.ver",
-        "catalogos.leer",
-        "catalogos.crear",
-        "catalogos.escribir",
-        "usuarios.gestionar",
+        PERM_VENTAS_VENDER,
+        PERM_VENTAS_ANULAR,
+        PERM_INVENTARIO_VER,
+        PERM_INVENTARIO_ESCRIBIR,
+        PERM_PRECIOS_LEER,
+        PERM_PRECIOS_ESCRIBIR,
+        PERM_REPORTE_VER,
+        PERM_CATALOGOS_LEER,
+        PERM_CATALOGOS_CREAR,
+        PERM_CATALOGOS_ESCRIBIR,
+        PERM_USUARIOS_GESTIONAR,
     },
     "admin": {
-        "ventas.vender",
-        "ventas.anular",
-        "inventario.ver",
-        "inventario.escribir",
-        "inventario.admin",
-        "precios.leer",
-        "precios.escribir",
-        "reporte.ver",
-        "catalogos.leer",
-        "catalogos.crear",
-        "catalogos.escribir",
-        "sucursales.admin",
-        "usuarios.gestionar",
+        PERM_VENTAS_VENDER,
+        PERM_VENTAS_ANULAR,
+        PERM_INVENTARIO_VER,
+        PERM_INVENTARIO_ESCRIBIR,
+        PERM_INVENTARIO_ADMIN,
+        PERM_PRECIOS_LEER,
+        PERM_PRECIOS_ESCRIBIR,
+        PERM_REPORTE_VER,
+        PERM_CATALOGOS_LEER,
+        PERM_CATALOGOS_CREAR,
+        PERM_CATALOGOS_ESCRIBIR,
+        PERM_SUCURSALES_ADMIN,
+        PERM_USUARIOS_GESTIONAR,
     },
 }
 

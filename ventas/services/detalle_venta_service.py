@@ -57,56 +57,53 @@ class DetalleVentaService(BaseService):
             venta.save(update_fields=["total"])
         return total
 
+    def _sucursal_id_de_venta(self, venta):
+        try:
+            # venta.id_inventario puede ser instancia o id
+            inv = venta.id_inventario
+            if hasattr(inv, 'id_sucursal_id'):
+                return inv.id_sucursal_id
+            from inventario.models import Inventario
+            inv_obj = Inventario.objects.filter(id=venta.id_inventario_id).first()
+            return inv_obj.id_sucursal_id if inv_obj else None
+        except Exception:
+            return None
+
+    def _sucursal_del_usuario(self, user):
+        perfil = getattr(user, 'perfil', None)
+        user_sucursal_id = None
+        if perfil is not None:
+            user_sucursal_id = getattr(perfil, 'id_sucursal_id', None)
+            # Si perfil no está cargado, intentar fetch
+            if user_sucursal_id is None:
+                try:
+                    # perfil podría ser DoesNotExist
+                    user_sucursal_id = perfil.id_sucursal_id
+                except Exception:
+                    user_sucursal_id = None
+        return user_sucursal_id
+
+    def _validar_cross_sucursal(self, user, venta):
+        user_sucursal_id = self._sucursal_del_usuario(user)
+        # Si el usuario es staff/superuser, bypass (operador global)
+        if user_sucursal_id is not None and not es_staff(user):
+            sucursal_venta_id = self._sucursal_id_de_venta(venta)
+            if sucursal_venta_id is not None and user_sucursal_id != sucursal_venta_id:
+                raise ValueError(
+                    f"La venta pertenece al inventario {venta.id_inventario_id} (Sucursal {sucursal_venta_id}) y no puede ser operada por el usuario de la sucursal {user_sucursal_id}"
+                )
+
     def _validar_producto_en_inventario_sucursal(self, producto, venta, user=None):
         """Valida que el producto tenga stock >0 en el inventario/sucursal de la venta
         y que el usuario pertenezca a la misma sucursal (si tiene perfil)."""
         # Bloqueo cross-sucursal: si el usuario tiene perfil con sucursal, debe coincidir con la sucursal de la venta
         if user is not None:
-            perfil = getattr(user, 'perfil', None)
-            # Perfil puede ser RelatedObject sin cache: intentar obtener id_sucursal_id sin query extra
-            user_sucursal_id = None
-            if perfil is not None:
-                user_sucursal_id = getattr(perfil, 'id_sucursal_id', None)
-                # Si perfil no está cargado, intentar fetch
-                if user_sucursal_id is None:
-                    try:
-                        # perfil podría ser DoesNotExist
-                        user_sucursal_id = perfil.id_sucursal_id
-                    except Exception:
-                        user_sucursal_id = None
-            # Si el usuario es staff/superuser, bypass (operador global)
-            if user_sucursal_id is not None and not es_staff(user):
-                sucursal_venta_id = None
-                try:
-                    # venta.id_inventario puede ser instancia o id
-                    inv = venta.id_inventario
-                    if hasattr(inv, 'id_sucursal_id'):
-                        sucursal_venta_id = inv.id_sucursal_id
-                    else:
-                        from inventario.models import Inventario
-                        inv_obj = Inventario.objects.filter(id=venta.id_inventario_id).first()
-                        sucursal_venta_id = inv_obj.id_sucursal_id if inv_obj else None
-                except Exception:
-                    sucursal_venta_id = None
-                if sucursal_venta_id is not None and user_sucursal_id != sucursal_venta_id:
-                    raise ValueError(
-                        f"La venta pertenece al inventario {venta.id_inventario_id} (Sucursal {sucursal_venta_id}) y no puede ser operada por el usuario de la sucursal {user_sucursal_id}"
-                    )
+            self._validar_cross_sucursal(user, venta)
 
         # Validación producto en inventario/sucursal: stock >0
         stock = self.inventario_service.get_stock(producto.id, venta.id_inventario_id)
         if stock == 0:
-            sucursal_id = None
-            try:
-                inv = venta.id_inventario
-                if hasattr(inv, 'id_sucursal_id'):
-                    sucursal_id = inv.id_sucursal_id
-                else:
-                    from inventario.models import Inventario
-                    inv_obj = Inventario.objects.filter(id=venta.id_inventario_id).first()
-                    sucursal_id = inv_obj.id_sucursal_id if inv_obj else None
-            except Exception:
-                pass
+            sucursal_id = self._sucursal_id_de_venta(venta)
             raise ValueError(
                 f"El producto '{producto.nombre}' no está disponible en el inventario {venta.id_inventario_id} (Sucursal {sucursal_id}) - stock 0"
             )
@@ -199,7 +196,7 @@ class DetalleVentaService(BaseService):
             self._recalcular_total(venta.id)
             return resultado
 
-    def delete(self, id):
+    def delete(self, id, user=None):
         with transaction.atomic():
             detalle = self.repository.get_by_id(id)
             if not detalle:
@@ -208,6 +205,6 @@ class DetalleVentaService(BaseService):
 
             self.inventario_service.revertir_salida_por_venta(detalle)
 
-            super().delete(id)
+            super().delete(id, user)
             self._recalcular_total(venta_id)
             return {"message": f"{self.model.__name__} eliminado exitosamente"}

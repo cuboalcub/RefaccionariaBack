@@ -24,7 +24,7 @@ class MovimientoInventario(models.Model):
     cantidad = models.IntegerField()
     fecha = models.DateTimeField(auto_now_add=True)
     razon = models.CharField(max_length=200)
-    observaciones = models.CharField(max_length=200, blank=True, null=True)
+    observaciones = models.CharField(max_length=200, blank=True)
 
     def __str__(self):
         return f"{self.tipo} - {self.cantidad}"

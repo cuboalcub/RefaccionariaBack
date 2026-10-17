@@ -49,92 +49,96 @@ class ReporteVentaService:
             "ventas": data
         }
 
+    def _inicio_de_mes(self, ahora, year, month):
+        return ahora.replace(
+            year=year,
+            month=month,
+            day=1,
+            hour=0,
+            minute=0,
+            second=0,
+            microsecond=0
+        )
+
+    def _rango_dia(self, ahora):
+        inicio = ahora.replace(hour=0, minute=0, second=0, microsecond=0)
+        return inicio, inicio + timedelta(days=1)
+
+    def _rango_semana(self, ahora):
+        inicio = ahora - timedelta(days=ahora.weekday())
+        inicio = inicio.replace(hour=0, minute=0, second=0, microsecond=0)
+        return inicio, inicio + timedelta(days=7)
+
+    def _rango_quincena(self, ahora, year=None, month=None, quincena=None):
+        if not year or not month or not quincena:
+            raise ValueError("Debe enviar year, month y quincena (1 o 2)")
+
+        inicio_mes = self._inicio_de_mes(ahora, year, month)
+
+        if int(quincena) == 1:
+            return inicio_mes, inicio_mes.replace(day=16)
+
+        if int(quincena) == 2:
+            inicio = inicio_mes.replace(day=16)
+            return inicio, self._fin_de_quincena(inicio, year, month)
+
+        raise ValueError("Quincena debe ser 1 o 2")
+
+    def _fin_de_quincena(self, inicio, year, month):
+        if month == 12:
+            return inicio.replace(year=year + 1, month=1, day=1)
+        return inicio.replace(month=month + 1, day=1)
+
+    def _rango_mes(self, ahora, year=None, month=None):
+        if year and month:
+            inicio = self._inicio_de_mes(ahora, year, month)
+            return inicio, self._fin_de_mes(inicio, year, month)
+
+        inicio = ahora.replace(
+            day=1,
+            hour=0,
+            minute=0,
+            second=0,
+            microsecond=0
+        )
+        return inicio, ahora
+
+    def _fin_de_mes(self, inicio, year, month):
+        if month == 12:
+            return inicio.replace(year=year + 1, month=1)
+        return inicio.replace(month=month + 1)
+
+    def _rango_year(self, ahora, year=None):
+        if not year:
+            raise ValueError("Debe enviar year para reporte anual")
+
+        inicio = ahora.replace(
+            year=year,
+            month=1,
+            day=1,
+            hour=0,
+            minute=0,
+            second=0,
+            microsecond=0
+        )
+        return inicio, inicio.replace(year=year + 1)
+
     def _calcular_rango(self, tipo: str, year=None, month=None, quincena=None):
         ahora = timezone.localtime()
 
         if tipo == "day":
-            inicio = ahora.replace(hour=0, minute=0, second=0, microsecond=0)
-            fin = inicio + timedelta(days=1)
+            return self._rango_dia(ahora)
 
-        elif tipo == "week":
-            inicio = ahora - timedelta(days=ahora.weekday())
-            inicio = inicio.replace(hour=0, minute=0, second=0, microsecond=0)
-            fin = inicio + timedelta(days=7)
+        if tipo == "week":
+            return self._rango_semana(ahora)
 
-        elif tipo == "quincena":
-            if not year or not month or not quincena:
-                raise ValueError("Debe enviar year, month y quincena (1 o 2)")
+        if tipo == "quincena":
+            return self._rango_quincena(ahora, year, month, quincena)
 
-            inicio_mes = ahora.replace(
-                year=year,
-                month=month,
-                day=1,
-                hour=0,
-                minute=0,
-                second=0,
-                microsecond=0
-            )
+        if tipo == "month":
+            return self._rango_mes(ahora, year, month)
 
-            if int(quincena) == 1:
-                inicio = inicio_mes
-                fin = inicio_mes.replace(day=16)
+        if tipo == "year":
+            return self._rango_year(ahora, year)
 
-            elif int(quincena) == 2:
-                inicio = inicio_mes.replace(day=16)
-
-                if month == 12:
-                    fin = inicio.replace(year=year + 1, month=1, day=1)
-                else:
-                    fin = inicio.replace(month=month + 1, day=1)
-
-            else:
-                raise ValueError("Quincena debe ser 1 o 2")
-
-        elif tipo == "month":
-
-            if year and month:
-                inicio = ahora.replace(
-                    year=year,
-                    month=month,
-                    day=1,
-                    hour=0,
-                    minute=0,
-                    second=0,
-                    microsecond=0
-                )
-
-                if month == 12:
-                    fin = inicio.replace(year=year + 1, month=1)
-                else:
-                    fin = inicio.replace(month=month + 1)
-
-            else:
-                inicio = ahora.replace(
-                    day=1,
-                    hour=0,
-                    minute=0,
-                    second=0,
-                    microsecond=0
-                )
-                fin = ahora
-
-        elif tipo == "year":
-            if not year:
-                raise ValueError("Debe enviar year para reporte anual")
-
-            inicio = ahora.replace(
-                year=year,
-                month=1,
-                day=1,
-                hour=0,
-                minute=0,
-                second=0,
-                microsecond=0
-            )
-
-            fin = inicio.replace(year=year + 1)
-
-        else:
-            raise ValueError("Tipo de reporte inválido")
-
-        return inicio, fin
+        raise ValueError("Tipo de reporte inválido")

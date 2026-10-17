@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 
 import dj_database_url
+from django.core.management.utils import get_random_string
 from dotenv import load_dotenv
 
 from datetime import timedelta
@@ -29,7 +30,7 @@ load_dotenv(BASE_DIR / ".env")
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.getenv("SECRET_KEY")
 if not SECRET_KEY and os.getenv("DEBUG", "False") == "True":
-    SECRET_KEY = "dev_insecure_secret_key"
+    SECRET_KEY = get_random_string(50)
 if not SECRET_KEY:
     raise RuntimeError("SECRET_KEY must be set in the environment for non-debug deployments")
 

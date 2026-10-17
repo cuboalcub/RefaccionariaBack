@@ -36,118 +36,88 @@ class ProductoService(BaseService):
         """Devuelve productos con paginación opcional. Si sucursal_id se indica, filtra solo productos
         con stock >0 en esa sucursal y enriquece con precio_sucursal (null si no existe)."""
         try:
-            # Flujo sucursal: stock + precio_sucursal
             if sucursal_id is not None:
-                from inventario.repositories.detalle_inventario_repository import DetalleInventarioRepository
-                from inventario.models import PrecioSucursal
-                from sucursales.models import Sucursal
-
-                if not Sucursal.objects.filter(id=sucursal_id).exists():
-                    raise ValueError(f"Sucursal con id {sucursal_id} no encontrada")
-
-                detalle_repo = DetalleInventarioRepository()
-                stock_map = detalle_repo.get_stock_map_por_sucursal(sucursal_id)
-                if not stock_map:
-                    if page is not None:
-                        import math
-                        return {"total": 0, "page": page, "page_size": page_size, "total_pages": 0, "results": []}
-                    return []
-
-                # Filtra productos base por ids con stock
-                qs = Producto.objects.filter(id__in=stock_map.keys()).select_related('id_tipo', 'id_proveedor')
-                # Filtros adicionales
-                if search:
-                    qs = qs.filter(Q(nombre__icontains=search) | Q(clave__icontains=search) | Q(marca__icontains=search) | Q(codigo_barras__icontains=search) | Q(descripcion__icontains=search))
-                if clave:
-                    qs = qs.filter(clave__icontains=clave)
-                if marca:
-                    qs = qs.filter(marca__icontains=marca)
-                if codigo_barras:
-                    qs = qs.filter(codigo_barras__icontains=codigo_barras)
-                if tipo_id:
-                    qs = qs.filter(id_tipo_id=tipo_id)
-                if proveedor_id:
-                    qs = qs.filter(id_proveedor_id=proveedor_id)
-
-                qs = qs.order_by('id')
-                # Evaluar queryset a lista
-                filtered = list(qs)
-                # Mantener solo los que siguen con stock >0 tras filtros (ya filtrado por ids)
-                # Aplicar paginación
-                # Precargar precios activos de la sucursal para los productos filtrados
-                precio_map = {
-                    ps.id_producto_id: ps for ps in PrecioSucursal.objects.filter(id_sucursal_id=sucursal_id, activo=True, id_producto_id__in=[p.id for p in filtered])
-                }
-                # Construir dicts enriquecidos
-                enriched = []
-                for p in filtered:
-                    d = self._to_dict(p)
-                    ps = precio_map.get(p.id)
-                    d['precio_sucursal'] = str(ps.precio_venta) if ps else None
-                    d['vigente_desde'] = ps.vigente_desde.isoformat() if ps and ps.vigente_desde else None
-                    d['cantidad'] = stock_map.get(p.id, 0)
-                    d['id_sucursal'] = sucursal_id
-                    # Mantener precio_base como precio_venta original para referencia
-                    d['precio_base'] = d['precio_venta']
-                    enriched.append(d)
-
-                total = len(enriched)
-                if page is not None:
-                    start = (page - 1) * page_size
-                    end = start + page_size
-                    instances = enriched[start:end]
-                    import math
-                    return {
-                        "total": total,
-                        "page": page,
-                        "page_size": page_size,
-                        "total_pages": math.ceil(total / page_size) if total else 0,
-                        "results": instances,
-                    }
-                return enriched
-
-            # Flujo normal sin sucursal (compatibilidad)
-            all_instances = self.repository.get_all()
-            # Aplicar filtros también en flujo sin sucursal si se envían (search etc)
-            if search or clave or marca or codigo_barras or tipo_id or proveedor_id:
-                # Reusar queryset para filtrar eficientemente
-                qs = Producto.objects.all()
-                if search:
-                    qs = qs.filter(Q(nombre__icontains=search) | Q(clave__icontains=search) | Q(marca__icontains=search) | Q(codigo_barras__icontains=search) | Q(descripcion__icontains=search))
-                if clave:
-                    qs = qs.filter(clave__icontains=clave)
-                if marca:
-                    qs = qs.filter(marca__icontains=marca)
-                if codigo_barras:
-                    qs = qs.filter(codigo_barras__icontains=codigo_barras)
-                if tipo_id:
-                    qs = qs.filter(id_tipo_id=tipo_id)
-                if proveedor_id:
-                    qs = qs.filter(id_proveedor_id=proveedor_id)
-                qs = qs.order_by('id').select_related('id_tipo', 'id_proveedor')
-                all_instances = list(qs)
-
-            total = len(all_instances)
-
-            if page is not None:
-                start = (page - 1) * page_size
-                end = start + page_size
-                instances = all_instances[start:end]
-                import math
-
-                return {
-                    "total": total,
-                    "page": page,
-                    "page_size": page_size,
-                    "total_pages": math.ceil(total / page_size),
-                    "results": [self._to_dict(i) for i in instances],
-                }
-
-            return [self._to_dict(i) for i in all_instances]
+                productos = self._productos_por_sucursal(sucursal_id, search, clave, marca, codigo_barras, tipo_id, proveedor_id)
+                return self._paginar(productos, page, page_size)
+            productos = self._productos_normales(search, clave, marca, codigo_barras, tipo_id, proveedor_id)
+            return self._paginar(productos, page, page_size, self._to_dict)
         except ValueError:
             raise
         except Exception as e:
             raise ValueError(f"Error al obtener productos: {str(e)}") from e
+
+    @staticmethod
+    def _filtros(qs, search, clave, marca, codigo_barras, tipo_id, proveedor_id):
+        if search:
+            qs = qs.filter(Q(nombre__icontains=search) | Q(clave__icontains=search) | Q(marca__icontains=search) | Q(codigo_barras__icontains=search) | Q(descripcion__icontains=search))
+        if clave:
+            qs = qs.filter(clave__icontains=clave)
+        if marca:
+            qs = qs.filter(marca__icontains=marca)
+        if codigo_barras:
+            qs = qs.filter(codigo_barras__icontains=codigo_barras)
+        if tipo_id:
+            qs = qs.filter(id_tipo_id=tipo_id)
+        if proveedor_id:
+            qs = qs.filter(id_proveedor_id=proveedor_id)
+        return qs
+
+    def _productos_por_sucursal(self, sucursal_id, search, clave, marca, codigo_barras, tipo_id, proveedor_id):
+        from inventario.repositories.detalle_inventario_repository import DetalleInventarioRepository
+        from sucursales.models import Sucursal
+
+        if not Sucursal.objects.filter(id=sucursal_id).exists():
+            raise ValueError(f"Sucursal con id {sucursal_id} no encontrada")
+        stock_map = DetalleInventarioRepository().get_stock_map_por_sucursal(sucursal_id)
+        if not stock_map:
+            return []
+        qs = self._filtros(
+            Producto.objects.filter(id__in=stock_map.keys()).select_related('id_tipo', 'id_proveedor'),
+            search, clave, marca, codigo_barras, tipo_id, proveedor_id,
+        ).order_by('id')
+        productos = list(qs)
+        return self._enriquecidos(sucursal_id, productos, stock_map)
+
+    def _enriquecidos(self, sucursal_id, productos, stock_map):
+        from inventario.models import PrecioSucursal
+
+        precio_map = {
+            ps.id_producto_id: ps for ps in PrecioSucursal.objects.filter(id_sucursal_id=sucursal_id, activo=True, id_producto_id__in=[p.id for p in productos])
+        }
+        enriched = []
+        for p in productos:
+            d = self._to_dict(p)
+            ps = precio_map.get(p.id)
+            d['precio_sucursal'] = str(ps.precio_venta) if ps else None
+            d['vigente_desde'] = ps.vigente_desde.isoformat() if ps and ps.vigente_desde else None
+            d['cantidad'] = stock_map.get(p.id, 0)
+            d['id_sucursal'] = sucursal_id
+            d['precio_base'] = d['precio_venta']
+            enriched.append(d)
+        return enriched
+
+    def _productos_normales(self, search, clave, marca, codigo_barras, tipo_id, proveedor_id):
+        if not (search or clave or marca or codigo_barras or tipo_id or proveedor_id):
+            return list(self.repository.get_all())
+        qs = self._filtros(Producto.objects.all(), search, clave, marca, codigo_barras, tipo_id, proveedor_id)
+        return list(qs.order_by('id').select_related('id_tipo', 'id_proveedor'))
+
+    @staticmethod
+    def _paginar(items, page, page_size, serializar=None):
+        import math
+        items = list(items)
+        total = len(items)
+        if page is None:
+            return [serializar(i) for i in items] if serializar else items
+        start = (page - 1) * page_size
+        end = start + page_size
+        return {
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": math.ceil(total / page_size) if total else 0,
+            "results": [serializar(i) for i in items[start:end]] if serializar else items[start:end],
+        }
 
     def get_by_codigo_barras(self, codigo_barras):
         producto = self.repository.get_by_codigo_barras(codigo_barras)

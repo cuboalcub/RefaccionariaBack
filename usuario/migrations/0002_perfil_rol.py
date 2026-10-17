@@ -5,15 +5,15 @@ from django.db import migrations, models
 
 def backfill_roles_staff(apps, schema_editor):
     """Perfiles de usuarios staff -> admin; el resto conserva cajero."""
-    Perfil = apps.get_model('usuario', 'Perfil')
-    User = apps.get_model('auth', 'User')
-    staff_ids = User.objects.filter(is_staff=True).values_list('id', flat=True)
-    Perfil.objects.filter(usuario_id__in=staff_ids).update(rol='admin')
+    perfil_model = apps.get_model('usuario', 'Perfil')
+    usuario_model = apps.get_model('auth', 'User')
+    staff_ids = usuario_model.objects.filter(is_staff=True).values_list('id', flat=True)
+    perfil_model.objects.filter(usuario_id__in=staff_ids).update(rol='admin')
 
 
 def revertir_roles(apps, schema_editor):
-    Perfil = apps.get_model('usuario', 'Perfil')
-    Perfil.objects.filter(rol='admin').update(rol='cajero')
+    perfil_model = apps.get_model('usuario', 'Perfil')
+    perfil_model.objects.filter(rol='admin').update(rol='cajero')
 
 
 class Migration(migrations.Migration):

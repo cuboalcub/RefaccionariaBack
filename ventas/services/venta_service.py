@@ -12,6 +12,8 @@ from repository.permissions import es_staff
 from producto.repositories.producto_repository import ProductoRepository
 from inventario.models import Inventario
 
+ERRORES_EN_DETALLES_PREFIJO = "Errores en detalles: "
+
 class VentaService(BaseService):
     def __init__(self, venta_repo=None, user_repo=None, metodo_pago_repo=None, producto_repo=None):
         super().__init__(model=Venta, repository=venta_repo or VentaRepository())
@@ -35,6 +37,26 @@ class VentaService(BaseService):
             "fecha": instance.fecha.isoformat() if instance.fecha else None
         }
 
+    def _validar_paginacion(self, page, page_size):
+        try:
+            page = int(page)
+            page_size = int(page_size)
+        except (TypeError, ValueError):
+            raise ValueError("page y page_size deben ser enteros")
+        if page < 1 or page_size < 1:
+            raise ValueError("page y page_size deben ser >= 1")
+        return page, page_size
+
+    def _validar_sucursal_filtro(self, sucursal_id):
+        try:
+            sucursal_id = int(sucursal_id)
+        except (TypeError, ValueError):
+            raise ValueError("sucursal_id debe ser entero")
+        from sucursales.models import Sucursal
+        if not Sucursal.objects.filter(id=sucursal_id).exists():
+            raise ValueError(f"Sucursal con id {sucursal_id} no encontrada")
+        return sucursal_id
+
     def get_all(self, page: int = None, page_size: int = 10, sucursal_id: int = None):
         """Devuelve ventas divididas por sucursal con paginación opcional.
 
@@ -46,22 +68,10 @@ class VentaService(BaseService):
             import math
 
             if page is not None:
-                try:
-                    page = int(page)
-                    page_size = int(page_size)
-                except (TypeError, ValueError):
-                    raise ValueError("page y page_size deben ser enteros")
-                if page < 1 or page_size < 1:
-                    raise ValueError("page y page_size deben ser >= 1")
+                page, page_size = self._validar_paginacion(page, page_size)
 
             if sucursal_id is not None:
-                try:
-                    sucursal_id = int(sucursal_id)
-                except (TypeError, ValueError):
-                    raise ValueError("sucursal_id debe ser entero")
-                from sucursales.models import Sucursal
-                if not Sucursal.objects.filter(id=sucursal_id).exists():
-                    raise ValueError(f"Sucursal con id {sucursal_id} no encontrada")
+                sucursal_id = self._validar_sucursal_filtro(sucursal_id)
 
             qs = Venta.objects.all().select_related(
                 'id_usuario', 'id_metodo_pago', 'id_inventario__id_sucursal'
@@ -121,66 +131,73 @@ class VentaService(BaseService):
             raise ValueError(f"La sucursal {user_sucursal_id} no tiene un inventario asignado")
         return inventario
 
-    def _resolver_cabecera(self, data, user=None):
-        """Resuelve (usuario, método de pago, inventario) con las mismas
-        reglas que :meth:`create` (JWT vs legacy, staff override)."""
+    def _usuario_autenticado(self, data, user):
         via_jwt = user is not None and getattr(user, "is_authenticated", False)
         if via_jwt:
-            auth_user = user
-        elif "id_usuario" in data and data["id_usuario"] is not None:
-            auth_user = self.user_repo.get_by_id(data['id_usuario'])
-            if not auth_user:
+            return user, True
+        if "id_usuario" in data and data["id_usuario"] is not None:
+            usuario = self.user_repo.get_by_id(data['id_usuario'])
+            if not usuario:
                 raise ValueError(f"Usuario con id {data['id_usuario']} no encontrado")
-        else:
-            if "id_metodo_pago" not in data:
-                raise ValueError("Faltan campos obligatorios: id_usuario, id_metodo_pago")
-            raise ValueError("Faltan campos obligatorios: id_usuario (autenticación requerida)")
+            return usuario, False
+        if "id_metodo_pago" not in data:
+            raise ValueError("Faltan campos obligatorios: id_usuario, id_metodo_pago")
+        raise ValueError("Faltan campos obligatorios: id_usuario (autenticación requerida)")
 
+    def _metodo_pago_resuelto(self, data):
         if "id_metodo_pago" not in data or data["id_metodo_pago"] is None:
             raise ValueError("Faltan campos obligatorios: id_metodo_pago")
-
-        user = auth_user
         metodo_pago = self.metodo_pago_repo.get_by_id(data['id_metodo_pago'])
         if not metodo_pago:
             raise ValueError(f"Metodo de pago con id {data['id_metodo_pago']} no encontrado")
+        return metodo_pago
 
-        # Resolver inventario server-side.
-        # - via_jwt + usuario normal: sucursal del JWT/perfil (se ignora
-        #   cualquier sucursal_id/id_inventario enviado).
-        # - via_jwt + staff/superuser: override explícito con sucursal_id;
-        #   el inventario es el primero de esa sucursal por id.
-        # - legacy (sin via_jwt, tests): se respeta id_inventario del payload
-        #   para compatibilidad interna.
-        is_staff = es_staff(user)
-        inventario = None
+    def _inventario_override_staff(self, data):
+        try:
+            suc_id = int(data["sucursal_id"])
+        except (TypeError, ValueError):
+            raise ValueError("sucursal_id debe ser entero")
+        from sucursales.models import Sucursal
+        if not Sucursal.objects.filter(id=suc_id).exists():
+            raise ValueError(f"Sucursal con id {suc_id} no encontrada")
+        inventario = Inventario.objects.filter(
+            id_sucursal_id=suc_id
+        ).order_by("id").first()
+        if not inventario:
+            raise ValueError(f"La sucursal {suc_id} no tiene un inventario asignado")
+        return inventario
+
+    def _inventario_del_usuario(self, user, is_staff):
+        try:
+            return self._resolve_inventario_for_user(user)
+        except ValueError as e:
+            if is_staff:
+                raise ValueError(str(e) + " (staff: envíe sucursal_id explícito)")
+            raise
+
+    def _inventario_via_jwt(self, data, user, is_staff):
+        if is_staff and "sucursal_id" in data and data["sucursal_id"] is not None:
+            return self._inventario_override_staff(data)
+        return self._inventario_del_usuario(user, is_staff)
+
+    def _inventario_legacy(self, data):
+        if "id_inventario" not in data or data["id_inventario"] is None:
+            raise ValueError("Faltan campos obligatorios: id_inventario")
+        inventario = Inventario.objects.filter(id=data['id_inventario']).first()
+        if not inventario:
+            raise ValueError(f"Inventario con id {data['id_inventario']} no encontrado")
+        return inventario
+
+    def _resolver_cabecera(self, data, user=None):
+        """Resuelve (usuario, método de pago, inventario) con las mismas
+        reglas que :meth:`create` (JWT vs legacy, staff override)."""
+        usuario, via_jwt = self._usuario_autenticado(data, user)
+        metodo_pago = self._metodo_pago_resuelto(data)
         if via_jwt:
-            if is_staff and "sucursal_id" in data and data["sucursal_id"] is not None:
-                try:
-                    suc_id = int(data["sucursal_id"])
-                except (TypeError, ValueError):
-                    raise ValueError("sucursal_id debe ser entero")
-                from sucursales.models import Sucursal
-                if not Sucursal.objects.filter(id=suc_id).exists():
-                    raise ValueError(f"Sucursal con id {suc_id} no encontrada")
-                inventario = Inventario.objects.filter(
-                    id_sucursal_id=suc_id
-                ).order_by("id").first()
-                if not inventario:
-                    raise ValueError(f"La sucursal {suc_id} no tiene un inventario asignado")
-            else:
-                try:
-                    inventario = self._resolve_inventario_for_user(user)
-                except ValueError as e:
-                    if is_staff:
-                        raise ValueError(str(e) + " (staff: envíe sucursal_id explícito)")
-                    raise
+            inventario = self._inventario_via_jwt(data, usuario, es_staff(usuario))
         else:
-            if "id_inventario" not in data or data["id_inventario"] is None:
-                raise ValueError("Faltan campos obligatorios: id_inventario")
-            inventario = Inventario.objects.filter(id=data['id_inventario']).first()
-            if not inventario:
-                raise ValueError(f"Inventario con id {data['id_inventario']} no encontrado")
-        return user, metodo_pago, inventario
+            inventario = self._inventario_legacy(data)
+        return usuario, metodo_pago, inventario
 
     def create(self, data, user=None):
         user, metodo_pago, inventario = self._resolver_cabecera(data, user=user)
@@ -194,59 +211,36 @@ class VentaService(BaseService):
 
         return venta
 
-    @transaction.atomic
-    def crear_venta_completa(self, data, user=None):
-        """Crea cabecera + detalles en una sola transacción (todo o nada).
+    def _validar_linea_detalle(self, indice, detalle):
+        if not isinstance(detalle, dict):
+            return f"Línea {indice}: formato inválido, se esperaba objeto", None, None
+        pid = detalle.get("id_producto", detalle.get("producto", None))
+        cant = detalle.get("cantidad", None)
+        if pid is None:
+            return f"Línea {indice}: falta id_producto/producto", None, None
+        try:
+            pid = int(pid)
+        except (TypeError, ValueError):
+            return f"Línea {indice} (producto {detalle.get('id_producto', detalle.get('producto'))}): id inválido", None, None
+        if isinstance(cant, bool) or not isinstance(cant, int):
+            return f"Línea {indice} (producto {pid}): cantidad debe ser entero positivo", None, None
+        if cant <= 0:
+            return f"Línea {indice} (producto {pid}): cantidad debe ser mayor a cero", None, None
+        return None, pid, cant
 
-        Acepta ``detalles`` como lista de ``{"producto"|"id_producto", "cantidad"}``.
-        Bloquea productos en orden determinista (evita deadlocks), valida
-        TODO antes de escribir y devuelve errores por línea. Si cualquier
-        detalle falla no queda venta huérfana, ni detalles, ni movimientos.
-        """
-        from decimal import Decimal as _Decimal
-        from inventario.models import DetalleInventario as _DetalleInv
-        from inventario.services.detalle_inventario_service import (
-            DetalleInventarioService as _InvService,
-        )
-        from inventario.services.precio_sucursal_service import (
-            PrecioSucursalService as _PrecioService,
-        )
-        from producto.models import Producto as _Producto
-        from ventas.models import DetalleVenta as _DetalleVenta
-
-        detalles_raw = data.get("detalles", None)
-        if not isinstance(detalles_raw, list) or not detalles_raw:
-            raise ValueError("Faltan campos obligatorios: detalles (lista no vacía)")
-
-        user_obj, metodo_pago, inventario = self._resolver_cabecera(data, user=user)
-        inv_service = _InvService()
-
-        # Normalizar líneas: índice + producto + cantidad.
+    def _normalizar_detalles(self, detalles_raw, errores):
         lineas = []
-        errores = []
         for i, d in enumerate(detalles_raw):
-            if not isinstance(d, dict):
-                errores.append(f"Línea {i}: formato inválido, se esperaba objeto")
-                continue
-            pid = d.get("id_producto", d.get("producto", None))
-            cant = d.get("cantidad", None)
-            if pid is None:
-                errores.append(f"Línea {i}: falta id_producto/producto")
-                continue
-            try:
-                pid = int(pid)
-            except (TypeError, ValueError):
-                errores.append(f"Línea {i} (producto {d.get('id_producto', d.get('producto'))}): id inválido")
-                continue
-            if isinstance(cant, bool) or not isinstance(cant, int):
-                errores.append(f"Línea {i} (producto {pid}): cantidad debe ser entero positivo")
-                continue
-            if cant <= 0:
-                errores.append(f"Línea {i} (producto {pid}): cantidad debe ser mayor a cero")
+            error, pid, cant = self._validar_linea_detalle(i, d)
+            if error:
+                errores.append(error)
                 continue
             lineas.append({"indice": i, "producto_id": pid, "cantidad": cant})
-        if errores:
-            raise ValueError("Errores en detalles: " + "; ".join(errores))
+        return lineas
+
+    def _bloquear_productos(self, lineas, inventario):
+        from inventario.models import DetalleInventario as _DetalleInv
+        from producto.models import Producto as _Producto
 
         # Bloqueo determinista: ordena IDs para evitar deadlocks entre
         # transacciones concurrentes.
@@ -263,14 +257,10 @@ class VentaService(BaseService):
                 id_inventario_id=inventario.id,
             )
         )
-        for ln in lineas:
-            if ln["producto_id"] not in productos:
-                errores.append(
-                    f"Línea {ln['indice']} (producto {ln['producto_id']}): no existe"
-                )
-        if errores:
-            raise ValueError("Errores en detalles: " + "; ".join(errores))
+        return ids_ordenados, productos
 
+    def _errores_de_stock(self, lineas, ids_ordenados, productos, inventario, inv_service):
+        errores = []
         # Validación de sucursal/stock. Acumula cantidades por producto para
         # detectar el caso de producto repetido que excede el stock en total.
         stocks = {}
@@ -279,7 +269,6 @@ class VentaService(BaseService):
         acumulado = {}
         for ln in lineas:
             acumulado[ln["producto_id"]] = acumulado.get(ln["producto_id"], 0) + ln["cantidad"]
-        sucursal_id = getattr(inventario, "id_sucursal_id", None)
         for ln in lineas:
             pid = ln["producto_id"]
             if stocks.get(pid, 0) == 0:
@@ -296,15 +285,61 @@ class VentaService(BaseService):
                     f"stock insuficiente: disponible {stocks.get(pid, 0)}, "
                     f"solicitado {total_pid}"
                 )
+        return errores
+
+    @transaction.atomic
+    def crear_venta_completa(self, data, user=None):
+        """Crea cabecera + detalles en una sola transacción (todo o nada).
+
+        Acepta ``detalles`` como lista de ``{"producto"|"id_producto", "cantidad"}``.
+        Bloquea productos en orden determinista (evita deadlocks), valida
+        TODO antes de escribir y devuelve errores por línea. Si cualquier
+        detalle falla no queda venta huérfana, ni detalles, ni movimientos.
+        """
+        from decimal import Decimal as _Decimal
+        from inventario.services.detalle_inventario_service import (
+            DetalleInventarioService as _InvService,
+        )
+        from inventario.services.precio_sucursal_service import (
+            PrecioSucursalService as _PrecioService,
+        )
+        from ventas.models import DetalleVenta as _DetalleVenta
+
+        detalles_raw = data.get("detalles", None)
+        if not isinstance(detalles_raw, list) or not detalles_raw:
+            raise ValueError("Faltan campos obligatorios: detalles (lista no vacía)")
+
+        user_obj, metodo_pago, inventario = self._resolver_cabecera(data, user=user)
+        inv_service = _InvService()
+
+        # Normalizar líneas: índice + producto + cantidad.
+        errores = []
+        lineas = self._normalizar_detalles(detalles_raw, errores)
+        if errores:
+            raise ValueError(ERRORES_EN_DETALLES_PREFIJO + "; ".join(errores))
+
+        ids_ordenados, productos = self._bloquear_productos(lineas, inventario)
+        for ln in lineas:
+            if ln["producto_id"] not in productos:
+                errores.append(
+                    f"Línea {ln['indice']} (producto {ln['producto_id']}): no existe"
+                )
+        if errores:
+            raise ValueError(ERRORES_EN_DETALLES_PREFIJO + "; ".join(errores))
+
         # Nota sucursal: el inventario ya viene derivado del perfil del
         # usuario (no-staff) o del override explícito de staff en
         # _resolver_cabecera, y el stock se mide en ese inventario, por lo
         # que un cross-sucursal es imposible en este camino. No se duplica
         # el chequeo del flujo por detalle.
+        errores = self._errores_de_stock(
+            lineas, ids_ordenados, productos, inventario, inv_service
+        )
         if errores:
-            raise ValueError("Errores en detalles: " + "; ".join(errores))
+            raise ValueError(ERRORES_EN_DETALLES_PREFIJO + "; ".join(errores))
 
         # Escritura: una venta + N detalles + N SALIDA, total en un save.
+        sucursal_id = getattr(inventario, "id_sucursal_id", None)
         venta_obj = Venta.objects.create(
             id_usuario=user_obj,
             id_metodo_pago=metodo_pago,

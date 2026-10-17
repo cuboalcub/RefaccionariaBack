@@ -33,12 +33,12 @@ class Producto(models.Model):
     id_proveedor = models.ForeignKey(Proveedor, on_delete=models.SET_NULL, blank=True, null=True)
     clave = models.CharField(unique=True, max_length=50)
     nombre = models.CharField(max_length=100)
-    descripcion = models.TextField(blank=True, null=True)
+    descripcion = models.TextField(blank=True)
     codigo_barras = models.CharField(max_length=100)
     precio_venta = models.DecimalField(max_digits=10, decimal_places=2)
     marca = models.CharField(max_length=100)
     costo = models.DecimalField(max_digits=10, decimal_places=2)
-    codigoSAT = models.CharField(max_length=50, blank=True, null=True)
+    codigoSAT = models.CharField(max_length=50, blank=True)
     
     def __str__(self):
         return self.nombre

@@ -10,6 +10,8 @@ from producto.services.producto_service import ProductoService
 from repository.base_controller import BaseDetailController, BaseListController
 from repository.permissions import exigir_permiso
 
+PERMISO_CATALOGOS_LEER = "catalogos.leer"
+
 
 class ProductoListCreateView(BaseListController):
     permiso_post = "catalogos.crear"
@@ -18,60 +20,62 @@ class ProductoListCreateView(BaseListController):
         super().__init__(ProductoService)
 
     def get(self, request):
-        exigir_permiso(request.user, "catalogos.leer")
-        categoria = request.query_params.get("categoria")
-        query = request.query_params.get("query")
-        page_param = request.query_params.get("page")
-        page_size = int(request.query_params.get("page_size", 10))
-        sucursal_id = request.query_params.get("sucursal_id")
-        search = request.query_params.get("search")
-        clave = request.query_params.get("clave")
-        marca = request.query_params.get("marca")
-        codigo_barras = request.query_params.get("codigo_barras")
-        tipo_id = request.query_params.get("tipo_id") or request.query_params.get("id_tipo")
-        proveedor_id = request.query_params.get("proveedor_id") or request.query_params.get("id_proveedor")
+        exigir_permiso(request.user, PERMISO_CATALOGOS_LEER)
+        params = request.query_params
+        page_size = int(params.get("page_size", 10))
+        kwargs, error = self._construir_kwargs(params)
+        if error:
+            return error
+        return self._obtener(params.get("page"), page_size, kwargs)
 
-        kwargs = {}
-        if sucursal_id is not None:
-            try:
-                kwargs["sucursal_id"] = int(sucursal_id)
-            except ValueError:
-                return Response({"error": "sucursal_id debe ser entero"}, status=status.HTTP_400_BAD_REQUEST)
-        if search:
-            kwargs["search"] = search
-        if clave:
-            kwargs["clave"] = clave
-        if marca:
-            kwargs["marca"] = marca
-        if codigo_barras:
-            kwargs["codigo_barras"] = codigo_barras
-        if tipo_id:
-            try:
-                kwargs["tipo_id"] = int(tipo_id)
-            except ValueError:
-                return Response({"error": "tipo_id debe ser entero"}, status=status.HTTP_400_BAD_REQUEST)
-        if proveedor_id:
-            try:
-                kwargs["proveedor_id"] = int(proveedor_id)
-            except ValueError:
-                return Response({"error": "proveedor_id debe ser entero"}, status=status.HTTP_400_BAD_REQUEST)
-
+    def _obtener(self, page_param, page_size, kwargs):
         try:
             if page_param is not None:
-                page = int(page_param)
-                data = self.service.get_all(page=page, page_size=page_size, **kwargs)
+                data = self.service.get_all(page=int(page_param), page_size=page_size, **kwargs)
             else:
                 data = self.service.get_all(**kwargs)
+            return Response(data, status=status.HTTP_200_OK)
         except ValueError as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-        return Response(data, status=status.HTTP_200_OK)
+
+    @staticmethod
+    def _texto(params, campo):
+        valor = params.get(campo)
+        return {campo: valor} if valor else {}
+
+    @staticmethod
+    def _entero(params, campo, alternativo=None):
+        valor = params.get(campo)
+        if alternativo is not None and valor in (None, ""):
+            valor = params.get(alternativo)
+        if valor is None:
+            return {}, None
+        try:
+            return {campo: int(valor)}, None
+        except ValueError:
+            return None, Response({"error": f"{campo} debe ser entero"}, status=status.HTTP_400_BAD_REQUEST)
+
+    def _construir_kwargs(self, params):
+        kwargs = {}
+        for campo in ("search", "clave", "marca", "codigo_barras"):
+            kwargs.update(self._texto(params, campo))
+        for campo, alternativo in (
+            ("sucursal_id", None),
+            ("tipo_id", "id_tipo"),
+            ("proveedor_id", "id_proveedor"),
+        ):
+            parte, error = self._entero(params, campo, alternativo)
+            if error:
+                return None, error
+            kwargs.update(parte)
+        return kwargs, None
 
 
 class ProductoPorCodigoBarrasView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        exigir_permiso(request.user, "catalogos.leer")
+        exigir_permiso(request.user, PERMISO_CATALOGOS_LEER)
         codigo_barras = request.query_params.get("codigo_barras")
         if not codigo_barras:
             return Response(
@@ -87,7 +91,7 @@ class ProductoPorCodigoBarrasView(APIView):
 
 
 class ProductoDetailView(BaseDetailController):
-    permiso_get = "catalogos.leer"
+    permiso_get = PERMISO_CATALOGOS_LEER
     permiso_put = "catalogos.escribir"
     permiso_delete = "catalogos.escribir"
 
