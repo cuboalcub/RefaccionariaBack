@@ -1,17 +1,17 @@
 from django.db.models import Sum
-from ventas.models import venta
+from ventas.models import Venta
 from repository.base_repository import BaseRepository
 
 class VentaRepository(BaseRepository):
     def __init__(self):
-        super().__init__(venta)
+        super().__init__(Venta)
 
     def get_ventas_por_rango(self, fecha_inicio, fecha_fin):
 
         return (
             self.model_class.objects
             .filter(fecha__range=(fecha_inicio, fecha_fin))
-            .select_related('id_usuario', 'id_metodoPago')
+            .select_related('id_usuario', 'id_metodo_pago')
             .prefetch_related('detalleventa_set__id_producto')
             .order_by('fecha')
         )

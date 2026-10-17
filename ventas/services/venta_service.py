@@ -2,7 +2,7 @@ from decimal import Decimal
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import transaction
 from ventas.services.detalle_venta_service import DetalleVentaService
-from ventas.models import venta
+from ventas.models import Venta
 from ventas.repositories.venta_repository import VentaRepository
 from usuario.repositories.usuario_repository import UserRepository
 from ventas.repositories.metodo_pago_repository import MetodoPagoRepository
@@ -13,10 +13,10 @@ from producto.repositories.producto_repository import ProductoRepository
 from inventario.models import Inventario
 
 class VentaService(BaseService):
-    def __init__(self, venta_repo=None, user_repo=None, metodopago_repo=None, producto_repo=None):
-        super().__init__(model=venta, repository=venta_repo or VentaRepository())
+    def __init__(self, venta_repo=None, user_repo=None, metodo_pago_repo=None, producto_repo=None):
+        super().__init__(model=Venta, repository=venta_repo or VentaRepository())
         self.user_repo = user_repo or UserRepository()
-        self.metodopago_repo = metodopago_repo or MetodoPagoRepository()
+        self.metodo_pago_repo = metodo_pago_repo or MetodoPagoRepository()
         self.producto_repo = producto_repo or ProductoRepository()
 
     def _to_dict(self, instance):
@@ -29,7 +29,7 @@ class VentaService(BaseService):
         return {
             "id": instance.id,
             "id_usuario": instance.id_usuario.id if instance.id_usuario else None,
-            "id_metodoPago": instance.id_metodoPago.id if instance.id_metodoPago else None,
+            "id_metodo_pago": instance.id_metodo_pago.id if instance.id_metodo_pago else None,
             "id_sucursal": id_sucursal,
             "total": str(instance.total),
             "fecha": instance.fecha.isoformat() if instance.fecha else None
@@ -63,8 +63,8 @@ class VentaService(BaseService):
                 if not Sucursal.objects.filter(id=sucursal_id).exists():
                     raise ValueError(f"Sucursal con id {sucursal_id} no encontrada")
 
-            qs = venta.objects.all().select_related(
-                'id_usuario', 'id_metodoPago', 'id_inventario__id_sucursal'
+            qs = Venta.objects.all().select_related(
+                'id_usuario', 'id_metodo_pago', 'id_inventario__id_sucursal'
             ).order_by('-fecha', '-id')
 
             if sucursal_id is not None:
@@ -132,17 +132,17 @@ class VentaService(BaseService):
             if not auth_user:
                 raise ValueError(f"Usuario con id {data['id_usuario']} no encontrado")
         else:
-            if "id_metodoPago" not in data:
-                raise ValueError("Faltan campos obligatorios: id_usuario, id_metodoPago")
+            if "id_metodo_pago" not in data:
+                raise ValueError("Faltan campos obligatorios: id_usuario, id_metodo_pago")
             raise ValueError("Faltan campos obligatorios: id_usuario (autenticación requerida)")
 
-        if "id_metodoPago" not in data or data["id_metodoPago"] is None:
-            raise ValueError("Faltan campos obligatorios: id_metodoPago")
+        if "id_metodo_pago" not in data or data["id_metodo_pago"] is None:
+            raise ValueError("Faltan campos obligatorios: id_metodo_pago")
 
         user = auth_user
-        metodoPago = self.metodopago_repo.get_by_id(data['id_metodoPago'])
-        if not metodoPago:
-            raise ValueError(f"Metodo de pago con id {data['id_metodoPago']} no encontrado")
+        metodo_pago = self.metodo_pago_repo.get_by_id(data['id_metodo_pago'])
+        if not metodo_pago:
+            raise ValueError(f"Metodo de pago con id {data['id_metodo_pago']} no encontrado")
 
         # Resolver inventario server-side.
         # - via_jwt + usuario normal: sucursal del JWT/perfil (se ignora
@@ -180,13 +180,13 @@ class VentaService(BaseService):
             inventario = Inventario.objects.filter(id=data['id_inventario']).first()
             if not inventario:
                 raise ValueError(f"Inventario con id {data['id_inventario']} no encontrado")
-        return user, metodoPago, inventario
+        return user, metodo_pago, inventario
 
     def create(self, data, user=None):
-        user, metodoPago, inventario = self._resolver_cabecera(data, user=user)
+        user, metodo_pago, inventario = self._resolver_cabecera(data, user=user)
         venta_data = {
             "id_usuario": user,
-            "id_metodoPago": metodoPago,
+            "id_metodo_pago": metodo_pago,
             "id_inventario": inventario,
             "total": 0
         }
@@ -212,13 +212,13 @@ class VentaService(BaseService):
             PrecioSucursalService as _PrecioService,
         )
         from producto.models import Producto as _Producto
-        from ventas.models import detalleVenta as _DetalleVenta
+        from ventas.models import DetalleVenta as _DetalleVenta
 
         detalles_raw = data.get("detalles", None)
         if not isinstance(detalles_raw, list) or not detalles_raw:
             raise ValueError("Faltan campos obligatorios: detalles (lista no vacía)")
 
-        user_obj, metodoPago, inventario = self._resolver_cabecera(data, user=user)
+        user_obj, metodo_pago, inventario = self._resolver_cabecera(data, user=user)
         inv_service = _InvService()
 
         # Normalizar líneas: índice + producto + cantidad.
@@ -305,9 +305,9 @@ class VentaService(BaseService):
             raise ValueError("Errores en detalles: " + "; ".join(errores))
 
         # Escritura: una venta + N detalles + N SALIDA, total en un save.
-        venta_obj = venta.objects.create(
+        venta_obj = Venta.objects.create(
             id_usuario=user_obj,
-            id_metodoPago=metodoPago,
+            id_metodo_pago=metodo_pago,
             id_inventario=inventario,
             total=_Decimal("0"),
         )
@@ -342,7 +342,7 @@ class VentaService(BaseService):
         return resultado
 
     def update(self, entity_id: int, data, user=None):
-        """Actualiza una venta. Solo ``id_metodoPago`` es mutable: ``total``
+        """Actualiza una venta. Solo ``id_metodo_pago`` es mutable: ``total``
         se recalcula desde los detalles y ``id_inventario``/``id_usuario``/
         ``fecha`` se ignoran para evitar manipulación (antes un PUT podía
         fijar cualquier total).
@@ -350,17 +350,17 @@ class VentaService(BaseService):
         data = dict(data)
         for campo in ("total", "id_inventario", "id_usuario", "fecha"):
             data.pop(campo, None)
-        if "id_metodoPago" in data and data["id_metodoPago"] is not None:
-            mp_val = data["id_metodoPago"]
+        if "id_metodo_pago" in data and data["id_metodo_pago"] is not None:
+            mp_val = data["id_metodo_pago"]
             try:
-                mp = self.metodopago_repo.get_by_id(
+                mp = self.metodo_pago_repo.get_by_id(
                     mp_val.id if hasattr(mp_val, "id") else mp_val
                 )
             except Exception:
                 mp = None
             if not mp:
                 raise ValueError(f"Metodo de pago con id {mp_val} no encontrado")
-            data["id_metodoPago"] = mp
+            data["id_metodo_pago"] = mp
         return super().update(entity_id, data)
 
     def delete(self, entity_id: int, user=None):
@@ -372,20 +372,20 @@ class VentaService(BaseService):
         stock nunca se restauraba. Todo se ejecuta en un único
         ``transaction.atomic`` con bloqueo de la venta.
         """
-        from ventas.models import detalleVenta
+        from ventas.models import DetalleVenta
         from inventario.services.detalle_inventario_service import (
             DetalleInventarioService,
         )
 
         with transaction.atomic():
             try:
-                instance = venta.objects.select_for_update().get(id=entity_id)
-            except (venta.DoesNotExist, ObjectDoesNotExist):
+                instance = Venta.objects.select_for_update().get(id=entity_id)
+            except (Venta.DoesNotExist, ObjectDoesNotExist):
                 raise NotFoundError(
                     f"venta con id {entity_id} no encontrado"
                 )
             detalles = list(
-                detalleVenta.objects.select_for_update().filter(
+                DetalleVenta.objects.select_for_update().filter(
                     id_venta_id=entity_id
                 )
             )

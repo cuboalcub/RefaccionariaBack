@@ -7,9 +7,9 @@ from django.contrib.auth.models import User
 from inventario.models import Inventario
 from inventario.services.detalle_inventario_service import DetalleInventarioService
 from inventario.services.precio_sucursal_service import PrecioSucursalService
-from ventas.models import venta
-from ventas.services.detalleventa_service import DetalleVentaService
-from ventas.services.ventas_services import VentaService
+from ventas.models import Venta
+from ventas.services.detalle_venta_service import DetalleVentaService
+from ventas.services.venta_service import VentaService
 from tests.factories import (
     InventarioFactory,
     MetodoPagoFactory,
@@ -25,7 +25,7 @@ def _venta_base(user, inventario, metodo):
         {
             "id_usuario": user.id,
             "id_inventario": inventario.id,
-            "id_metodoPago": metodo.id,
+            "id_metodo_pago": metodo.id,
         }
     )
 
@@ -49,7 +49,7 @@ class TestVentaService:
         Perfil.objects.create(usuario=u, id_sucursal=suc)
         mp = MetodoPagoFactory()
 
-        res = VentaService().create({"id_metodoPago": mp.id}, user=u)
+        res = VentaService().create({"id_metodo_pago": mp.id}, user=u)
         assert res["id_usuario"] == u.id
         assert res["id_sucursal"] == suc.id
         assert "id_inventario" not in res
@@ -58,12 +58,12 @@ class TestVentaService:
         u = UserFactory()
         mp = MetodoPagoFactory()
         with pytest.raises(ValueError, match="no tiene una sucursal"):
-            VentaService().create({"id_metodoPago": mp.id}, user=u)
+            VentaService().create({"id_metodo_pago": mp.id}, user=u)
 
-    def test_create_sin_metodopago_falla(self):
+    def test_create_sin_metodo_pago_falla(self):
         u = UserFactory()
         inv = InventarioFactory()
-        with pytest.raises(ValueError, match="id_metodoPago"):
+        with pytest.raises(ValueError, match="id_metodo_pago"):
             VentaService().create(
                 {"id_usuario": u.id, "id_inventario": inv.id}
             )
@@ -118,7 +118,7 @@ class TestDetalleVentaService:
             {"id_producto": prod.id, "id_venta": v["id"], "cantidad": 2}, user=u
         )
         assert res["subtotal"] == "200.00"
-        assert venta.objects.get(id=v["id"]).total == Decimal("200.00")
+        assert Venta.objects.get(id=v["id"]).total == Decimal("200.00")
         # stock descontado: 10 - 2
         assert (
             DetalleInventarioService().get_stock(prod.id, inv.id) == 8
@@ -174,11 +174,11 @@ class TestDetalleVentaService:
 @pytest.mark.django_db
 class TestVentasAPI:
     def test_post_ventas_con_jwt(self, jwt_client, user, inventario):
-        from ventas.models import metodoPago
+        from ventas.models import MetodoPago
 
-        mp = metodoPago.objects.create(tipo="EFECTIVO", descripcion="cash")
+        mp = MetodoPago.objects.create(tipo="EFECTIVO", descripcion="cash")
         resp = jwt_client.post(
-            "/api/ventas/", {"id_metodoPago": mp.id}, format="json"
+            "/api/ventas/", {"id_metodo_pago": mp.id}, format="json"
         )
         assert resp.status_code == 201, resp.content
         assert resp.data["id_sucursal"] == inventario.id_sucursal_id
@@ -200,14 +200,14 @@ class TestVentasAPI:
             {
                 "id_usuario": otro_user.id,
                 "id_inventario": otro_inv.id,
-                "id_metodoPago": mp.id,
+                "id_metodo_pago": mp.id,
             }
         )
         VentaService().create(
             {
                 "id_usuario": user.id,
                 "id_inventario": inventario.id,
-                "id_metodoPago": mp.id,
+                "id_metodo_pago": mp.id,
             }
         )
         resp = auth_client.get("/api/ventas/")

@@ -1,9 +1,9 @@
 # Módulo ventas — reporte de validación
 
 ## Archivos inspeccionados
-`ventas/models.py`, `services/{ventas_services,detalleventa_service,metodopago_service,ventaTicket_service,reporte_ventas_service}.py`,
-`controllers/{ventas,detalleventas,metodopago,ventaTicket}_*.py`, `views/reporte_ventas_view.py`,
-`repositories/{ventas,detalleventa,metodopago}_*.py`, `repository/{base_service,base_controller,permissions}.py`.
+`ventas/models.py`, `services/{venta_service,detalle_venta_service,metodo_pago_service,venta_ticket_service,reporte_venta_service}.py`,
+`controllers/{venta,detalle_venta,metodo_pago,venta_ticket}_*.py`, `views/reporte_venta_view.py`,
+`repositories/{venta,detalle_venta,metodo_pago}_*.py`, `repository/{base_service,base_controller,permissions}.py`.
 
 ## Reglas de negocio verificadas
 - Subtotal server-side (`precio×cantidad`, 2 decimales); total = suma de subtotales, recalculado en crear/actualizar/borrar detalle.
@@ -21,7 +21,7 @@
 - Aprobadas 159, fallidas 0, omitidas 0. Estado real de BD en ~95% (mocks solo en ramas defensivas/PDF).
 
 ## Bugs encontrados y correcciones
-- **Bug A** (delete sin restaurar): `VentasDetailController` heredaba delete genérico; movimientos `SALIDA` huérfanos con `SET_NULL`.
+- **Bug A** (delete sin restaurar): `VentaDetailController` heredaba delete genérico; movimientos `SALIDA` huérfanos con `SET_NULL`.
   Fix: override `VentaService.delete` (atomic + `revertir_salida_por_venta` + locks). Regresión verde.
 - **Bug B** (venta parcial): flujo en 2 pasos sin atomicidad global.
   Fix: `crear_venta_completa` (locks deterministas, validación previa, errores por línea) + 410 en vía legacy.

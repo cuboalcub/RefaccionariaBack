@@ -11,15 +11,15 @@ from inventario.services.detalle_inventario_service import DetalleInventarioServ
 from inventario.services.precio_sucursal_service import PrecioSucursalService
 from repository.exceptions import NotFoundError
 from usuario.models import Perfil
-from ventas.models import Reporte, detalleVenta, venta
-from ventas.repositories.detalleventa_repository import DetalleVentaRepository
-from ventas.repositories.metodopago_repository import MetodoPagoRepository
-from ventas.repositories.ventas_repository import VentaRepository
-from ventas.services.detalleventa_service import DetalleVentaService
-from ventas.services.metodopago_service import MetodoPagoService
-from ventas.services.reporte_ventas_service import ReporteVentasService
-from ventas.services.ventaTicket_service import VentaTicketService
-from ventas.services.ventas_services import VentaService
+from ventas.models import Reporte, DetalleVenta, Venta
+from ventas.repositories.detalle_venta_repository import DetalleVentaRepository
+from ventas.repositories.metodo_pago_repository import MetodoPagoRepository
+from ventas.repositories.venta_repository import VentaRepository
+from ventas.services.detalle_venta_service import DetalleVentaService
+from ventas.services.metodo_pago_service import MetodoPagoService
+from ventas.services.reporte_venta_service import ReporteVentaService
+from ventas.services.venta_ticket_service import VentaTicketService
+from ventas.services.venta_service import VentaService
 from tests.factories import (
     InventarioFactory,
     MetodoPagoFactory,
@@ -32,7 +32,7 @@ from tests.factories import (
 # ---------------------------------------------------------------- helpers
 def _legacy_venta(user, inv, mp):
     return VentaService().create(
-        {"id_usuario": user.id, "id_inventario": inv.id, "id_metodoPago": mp.id}
+        {"id_usuario": user.id, "id_inventario": inv.id, "id_metodo_pago": mp.id}
     )
 
 
@@ -67,14 +67,14 @@ def _venta_con_stock(qty_venta=2, precio="100.00"):
 @pytest.mark.django_db
 class TestVentaToDict:
     def test_sin_inventario_ni_relaciones(self):
-        v = venta.objects.create(
-            id_usuario=None, id_metodoPago=None, id_inventario=None, total=Decimal("0.00")
+        v = Venta.objects.create(
+            id_usuario=None, id_metodo_pago=None, id_inventario=None, total=Decimal("0.00")
         )
         d = VentaService()._to_dict(v)
         assert "id_inventario" not in d
         assert d["id_sucursal"] is None
         assert d["id_usuario"] is None
-        assert d["id_metodoPago"] is None
+        assert d["id_metodo_pago"] is None
         assert d["fecha"] is not None
 
     def test_id_sucursal_excepcion_devuelve_none(self):
@@ -88,7 +88,7 @@ class TestVentaToDict:
         inst = SimpleNamespace(
             id=1,
             id_usuario=None,
-            id_metodoPago=None,
+            id_metodo_pago=None,
             id_inventario=_BadInv(),
             total=Decimal("5.00"),
             fecha=None,
@@ -205,41 +205,41 @@ class TestVentaCreateExtra:
 
     def test_solo_usuario_sin_metodo(self):
         u = UserFactory()
-        with pytest.raises(ValueError, match="id_metodoPago"):
+        with pytest.raises(ValueError, match="id_metodo_pago"):
             VentaService().create({"id_usuario": u.id})
 
     def test_sin_usuario_pide_auth(self):
         mp = MetodoPagoFactory()
         with pytest.raises(ValueError, match="id_usuario"):
-            VentaService().create({"id_metodoPago": mp.id})
+            VentaService().create({"id_metodo_pago": mp.id})
 
     def test_usuario_inexistente(self):
         mp = MetodoPagoFactory()
         with pytest.raises(ValueError, match="no encontrado"):
-            VentaService().create({"id_usuario": 999999, "id_metodoPago": mp.id})
+            VentaService().create({"id_usuario": 999999, "id_metodo_pago": mp.id})
 
     def test_metodo_inexistente(self):
         u = UserFactory()
         with pytest.raises(ValueError, match="no encontrado"):
-            VentaService().create({"id_usuario": u.id, "id_metodoPago": 999999,
+            VentaService().create({"id_usuario": u.id, "id_metodo_pago": 999999,
                                    "id_inventario": 1})
 
     def test_inventario_inexistente_legacy(self):
         u, mp = UserFactory(), MetodoPagoFactory()
         with pytest.raises(ValueError, match="no encontrado"):
             VentaService().create(
-                {"id_usuario": u.id, "id_metodoPago": mp.id, "id_inventario": 999999}
+                {"id_usuario": u.id, "id_metodo_pago": mp.id, "id_inventario": 999999}
             )
 
     def test_legacy_sin_inventario(self):
         u, mp = UserFactory(), MetodoPagoFactory()
         with pytest.raises(ValueError, match="id_inventario"):
-            VentaService().create({"id_usuario": u.id, "id_metodoPago": mp.id})
+            VentaService().create({"id_usuario": u.id, "id_metodo_pago": mp.id})
 
     def test_legacy_con_anonymous_user(self):
         u, inv, mp = UserFactory(), InventarioFactory(), MetodoPagoFactory()
         res = VentaService().create(
-            {"id_usuario": u.id, "id_inventario": inv.id, "id_metodoPago": mp.id},
+            {"id_usuario": u.id, "id_inventario": inv.id, "id_metodo_pago": mp.id},
             user=AnonymousUser(),
         )
         assert res["id_usuario"] == u.id
@@ -252,7 +252,7 @@ class TestVentaCreateExtra:
         Perfil.objects.create(usuario=staff, id_sucursal=sa)
         mp = MetodoPagoFactory()
         res = VentaService().create(
-            {"id_metodoPago": mp.id, "sucursal_id": sb.id}, user=staff
+            {"id_metodo_pago": mp.id, "sucursal_id": sb.id}, user=staff
         )
         assert res["id_sucursal"] == sb.id
         assert "id_inventario" not in res
@@ -262,7 +262,7 @@ class TestVentaCreateExtra:
         mp = MetodoPagoFactory()
         with pytest.raises(ValueError, match="sucursal_id debe ser entero"):
             VentaService().create(
-                {"id_metodoPago": mp.id, "sucursal_id": "abc"}, user=staff
+                {"id_metodo_pago": mp.id, "sucursal_id": "abc"}, user=staff
             )
 
     def test_staff_sucursal_inexistente(self):
@@ -270,7 +270,7 @@ class TestVentaCreateExtra:
         mp = MetodoPagoFactory()
         with pytest.raises(ValueError, match="no encontrada"):
             VentaService().create(
-                {"id_metodoPago": mp.id, "sucursal_id": 999999}, user=staff
+                {"id_metodo_pago": mp.id, "sucursal_id": 999999}, user=staff
             )
 
     def test_staff_sucursal_sin_inventario(self):
@@ -279,14 +279,14 @@ class TestVentaCreateExtra:
         mp = MetodoPagoFactory()
         with pytest.raises(ValueError, match="no tiene un inventario"):
             VentaService().create(
-                {"id_metodoPago": mp.id, "sucursal_id": suc.id}, user=staff
+                {"id_metodo_pago": mp.id, "sucursal_id": suc.id}, user=staff
             )
 
     def test_staff_sin_sucursal_pide_explicito(self):
         staff = UserFactory(is_staff=True)
         mp = MetodoPagoFactory()
         with pytest.raises(ValueError, match="envíe sucursal_id explícito"):
-            VentaService().create({"id_metodoPago": mp.id}, user=staff)
+            VentaService().create({"id_metodo_pago": mp.id}, user=staff)
 
     def test_normal_ignora_override_usa_su_sucursal(self):
         sa, sb = SucursalFactory(), SucursalFactory()
@@ -296,7 +296,7 @@ class TestVentaCreateExtra:
         Perfil.objects.create(usuario=u, id_sucursal=sa)
         mp = MetodoPagoFactory()
         res = VentaService().create(
-            {"id_metodoPago": mp.id, "sucursal_id": sb.id}, user=u
+            {"id_metodo_pago": mp.id, "sucursal_id": sb.id}, user=u
         )
         assert res["id_sucursal"] == sa.id
 
@@ -306,7 +306,7 @@ class TestVentaCreateExtra:
 class TestDetallePrecioRecalculo:
     def test_precio_aplicable_fallback(self):
         suc, inv, prod, user, mp, v, det = _venta_con_stock()
-        vobj = venta.objects.get(id=v["id"])
+        vobj = Venta.objects.get(id=v["id"])
         assert DetalleVentaService()._precio_aplicable(prod, vobj) == prod.precio_venta
 
     def test_precio_aplicable_sin_inventario_en_venta(self):
@@ -319,14 +319,14 @@ class TestDetallePrecioRecalculo:
         PrecioSucursalService().create(
             {"id_producto": prod.id, "id_sucursal": suc.id, "precio_venta": "150.00"}
         )
-        vobj = venta.objects.get(id=v["id"])
+        vobj = Venta.objects.get(id=v["id"])
         assert DetalleVentaService()._precio_aplicable(prod, vobj) == Decimal("150.00")
 
     def test_recalcular_total(self):
         suc, inv, prod, user, mp, v, det = _venta_con_stock(qty_venta=2)
         total = DetalleVentaService()._recalcular_total(v["id"])
         assert total == Decimal("200.00")
-        assert venta.objects.get(id=v["id"]).total == Decimal("200.00")
+        assert Venta.objects.get(id=v["id"]).total == Decimal("200.00")
 
 
 # ---------------------------------------------------- DetalleVentaService.update
@@ -338,7 +338,7 @@ class TestDetalleUpdate:
 
     def test_venta_sin_inventario(self):
         suc, inv, prod, user, mp, v, det = _venta_con_stock()
-        venta.objects.filter(id=v["id"]).update(id_inventario=None)
+        Venta.objects.filter(id=v["id"]).update(id_inventario=None)
         with pytest.raises(ValueError, match="no tiene inventario"):
             DetalleVentaService().update(det["id"], {"cantidad": 5})
 
@@ -352,7 +352,7 @@ class TestDetalleUpdate:
         suc, inv, prod, user, mp, v, det = _venta_con_stock(qty_venta=2)
         res = DetalleVentaService().update(det["id"], {"cantidad": 3}, user=user)
         assert res["subtotal"] == "300.00"
-        assert venta.objects.get(id=v["id"]).total == Decimal("300.00")
+        assert Venta.objects.get(id=v["id"]).total == Decimal("300.00")
 
 
 # ---------------------------------------------------- DetalleVentaService.delete
@@ -364,10 +364,10 @@ class TestDetalleDelete:
 
     def test_restituye_total(self):
         suc, inv, prod, user, mp, v, det = _venta_con_stock(qty_venta=2)
-        assert venta.objects.get(id=v["id"]).total == Decimal("200.00")
+        assert Venta.objects.get(id=v["id"]).total == Decimal("200.00")
         out = DetalleVentaService().delete(det["id"])
         assert "eliminado" in out["message"]
-        assert venta.objects.get(id=v["id"]).total == Decimal("0")
+        assert Venta.objects.get(id=v["id"]).total == Decimal("0")
         with pytest.raises(NotFoundError):
             DetalleVentaService().get_by_id(det["id"])
 
@@ -419,8 +419,8 @@ class TestDetalleCrossSucursal:
     def test_create_venta_sin_inventario(self):
         prod = ProductoFactory()
         u, mp = UserFactory(), MetodoPagoFactory()
-        v = venta.objects.create(
-            id_usuario=u, id_metodoPago=mp, id_inventario=None, total=Decimal("0.00")
+        v = Venta.objects.create(
+            id_usuario=u, id_metodo_pago=mp, id_inventario=None, total=Decimal("0.00")
         )
         with pytest.raises(ValueError, match="no tiene inventario"):
             DetalleVentaService().create(
@@ -480,16 +480,16 @@ class TestVentaTicket:
         u, inv, mp = UserFactory(), InventarioFactory(), MetodoPagoFactory()
         v = _legacy_venta(u, inv, mp)
         prod = ProductoFactory()
-        detalleVenta.objects.create(
-            id_producto=prod, id_venta=venta.objects.get(id=v["id"]),
+        DetalleVenta.objects.create(
+            id_producto=prod, id_venta=Venta.objects.get(id=v["id"]),
             subtotal=Decimal("0.00"), cantidad=0,
         )
         t = VentaTicketService().get_ticket(v["id"])
         assert t["productos"][0]["precio_unitario"] == "0"
 
     def test_venta_sin_relaciones(self):
-        v = venta.objects.create(
-            id_usuario=None, id_metodoPago=None, id_inventario=None,
+        v = Venta.objects.create(
+            id_usuario=None, id_metodo_pago=None, id_inventario=None,
             total=Decimal("10.00"),
         )
         t = VentaTicketService().get_ticket(v.id)
@@ -504,14 +504,14 @@ class TestVentaTicket:
         fake_qs = mock.MagicMock()
         fake_qs.all.return_value = [fake_det]
         fake_venta = SimpleNamespace(
-            id=7, fecha=None, id_usuario=None, id_metodoPago=None,
+            id=7, fecha=None, id_usuario=None, id_metodo_pago=None,
             id_inventario=SimpleNamespace(id_sucursal=None),
             detalleventa_set=fake_qs, total=Decimal("10.00"),
         )
         chain = mock.MagicMock()
         chain.select_related.return_value.prefetch_related.return_value \
             .filter.return_value.first.return_value = fake_venta
-        with mock.patch("ventas.services.ventaTicket_service.venta") as mv:
+        with mock.patch("ventas.services.venta_ticket_service.Venta") as mv:
             mv.objects = chain.select_related.return_value.prefetch_related \
                 .return_value.filter.return_value  # noqa
             # reconstruir cadena completa sobre el mock de manager
@@ -523,10 +523,10 @@ class TestVentaTicket:
         assert t["productos"][0]["precio_unitario"] == "10.00"
 
 
-# ------------------------------------------------------- ReporteVentasService
+# ------------------------------------------------------- ReporteVentaService
 @pytest.mark.django_db
 class TestReporteRangos:
-    svc = ReporteVentasService()
+    svc = ReporteVentaService()
 
     def test_day(self):
         from datetime import timedelta
@@ -593,7 +593,7 @@ class TestReporteGenerar:
         suc, inv, prod, user, mp, v, det = _venta_con_stock(qty_venta=2)
         user.first_name, user.last_name = "Juan", "Perez"
         user.save()
-        rep = ReporteVentasService().generar_reporte("day")
+        rep = ReporteVentaService().generar_reporte("day")
         assert rep["tipo"] == "day"
         ids = [x["id"] for x in rep["ventas"]]
         assert v["id"] in ids
@@ -607,7 +607,7 @@ class TestReporteGenerar:
 
     def test_vendedor_sin_nombre_usa_username(self):
         suc, inv, prod, user, mp, v, det = _venta_con_stock()
-        rep = ReporteVentasService().generar_reporte("day")
+        rep = ReporteVentaService().generar_reporte("day")
         row = next(x for x in rep["ventas"] if x["id"] == v["id"])
         assert row["vendedor"] == user.username
 
@@ -615,15 +615,15 @@ class TestReporteGenerar:
         suc = SucursalFactory()
         inv = InventarioFactory(id_sucursal=suc)
         u = UserFactory()
-        v = venta.objects.create(
-            id_usuario=u, id_metodoPago=None, id_inventario=inv, total=Decimal("0.00")
+        v = Venta.objects.create(
+            id_usuario=u, id_metodo_pago=None, id_inventario=inv, total=Decimal("0.00")
         )
-        rep = ReporteVentasService().generar_reporte("day")
+        rep = ReporteVentaService().generar_reporte("day")
         row = next(x for x in rep["ventas"] if x["id"] == v.id)
         assert row["metodo_pago"] is None and row["detalles"] == []
 
 
-# ---------------------------------------------------------- ReporteVentasView
+# ---------------------------------------------------------- ReporteVentaView
 @pytest.mark.django_db
 class TestReporteView:
     def _auth(self, api_client, user):
@@ -642,8 +642,8 @@ class TestReporteView:
         _venta_con_stock()
         c = self._auth(api_client, user)
         with mock.patch(
-            "ventas.views.reporte_ventas_view.render_to_string", return_value="<html/>"
-        ), mock.patch("ventas.views.reporte_ventas_view.HTML") as mhtml:
+            "ventas.views.reporte_venta_view.render_to_string", return_value="<html/>"
+        ), mock.patch("ventas.views.reporte_venta_view.HTML") as mhtml:
             mhtml.return_value.write_pdf.return_value = b"%PDF-fake"
             resp = c.get("/api/reporte/", {"tipo": "day"})
         assert resp.status_code == 200
@@ -653,8 +653,8 @@ class TestReporteView:
     def test_ok_quincena_params(self, api_client, user):
         c = self._auth(api_client, user)
         with mock.patch(
-            "ventas.views.reporte_ventas_view.render_to_string", return_value="<html/>"
-        ), mock.patch("ventas.views.reporte_ventas_view.HTML") as mhtml:
+            "ventas.views.reporte_venta_view.render_to_string", return_value="<html/>"
+        ), mock.patch("ventas.views.reporte_venta_view.HTML") as mhtml:
             mhtml.return_value.write_pdf.return_value = b"%PDF-fake"
             resp = c.get(
                 "/api/reporte/",
@@ -665,16 +665,16 @@ class TestReporteView:
 
 # --------------------------------------------------------------- controllers
 @pytest.mark.django_db
-class TestVentasController:
+class TestVentaController:
     def test_get_propia_sucursal(self, auth_client, user, inventario):
         mp = MetodoPagoFactory()
         otra = InventarioFactory()
         VentaService().create(
-            {"id_usuario": user.id, "id_inventario": otra.id, "id_metodoPago": mp.id}
+            {"id_usuario": user.id, "id_inventario": otra.id, "id_metodo_pago": mp.id}
         )
         VentaService().create(
             {"id_usuario": user.id, "id_inventario": inventario.id,
-             "id_metodoPago": mp.id}
+             "id_metodo_pago": mp.id}
         )
         resp = auth_client.get("/api/ventas/")
         assert resp.status_code == 200
@@ -706,7 +706,7 @@ class TestVentasController:
 
     def test_post_ok_y_error(self, auth_client):
         mp = MetodoPagoFactory()
-        ok = auth_client.post("/api/ventas/", {"id_metodoPago": mp.id}, format="json")
+        ok = auth_client.post("/api/ventas/", {"id_metodo_pago": mp.id}, format="json")
         assert ok.status_code == 201
         bad = auth_client.post("/api/ventas/", {}, format="json")
         assert bad.status_code == 400
@@ -717,7 +717,7 @@ class TestVentasController:
         api_client.force_authenticate(user=staff_user)
         mp = MetodoPagoFactory()
         resp = api_client.post(
-            "/api/ventas/", {"id_metodoPago": mp.id, "sucursal_id": suc.id},
+            "/api/ventas/", {"id_metodo_pago": mp.id, "sucursal_id": suc.id},
             format="json",
         )
         assert resp.status_code == 201
@@ -729,7 +729,7 @@ class TestVentasController:
         InventarioFactory(id_sucursal=otra)
         mp = MetodoPagoFactory()
         resp = auth_client.post(
-            "/api/ventas/", {"id_metodoPago": mp.id, "sucursal_id": otra.id},
+            "/api/ventas/", {"id_metodo_pago": mp.id, "sucursal_id": otra.id},
             format="json",
         )
         assert resp.status_code == 201
@@ -858,7 +858,7 @@ class TestTicketController:
 
 # --------------------------------------------------------------- repositories
 @pytest.mark.django_db
-class TestVentasRepositories:
+class TestVentaRepositories:
     def test_rango_y_total(self):
         from django.utils import timezone
 
@@ -880,7 +880,7 @@ class TestVentasRepositories:
         assert repo.sum_subtotales(999999) == 0
         assert repo.get_by_venta(v["id"]).count() == 1
 
-    def test_metodopago_repo(self):
+    def test_metodo_pago_repo(self):
         repo = MetodoPagoRepository()
         obj = repo.create({"tipo": "T", "descripcion": "d"})
         assert repo.get_by_id(obj.id).tipo == "T"
@@ -890,7 +890,7 @@ class TestVentasRepositories:
 
 # ------------------------------------------------------------------- models
 @pytest.mark.django_db
-class TestVentasModels:
+class TestVentaModels:
     def test_reporte_str(self):
         from django.utils import timezone
 
@@ -941,7 +941,7 @@ class TestRamasDefensivas:
         owner = UserFactory()
         mp = MetodoPagoFactory()
         v = _legacy_venta(owner, inv, mp)
-        vobj = venta.objects.get(id=v["id"])
+        vobj = Venta.objects.get(id=v["id"])
         user = SimpleNamespace(is_staff=False, is_superuser=False,
                                perfil=SimpleNamespace())
         DetalleVentaService()._validar_producto_en_inventario_sucursal(

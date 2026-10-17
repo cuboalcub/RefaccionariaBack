@@ -3,7 +3,7 @@ from django.utils import timezone
 from ventas.repositories.venta_repository import VentaRepository
 
 
-class ReporteVentasService:
+class ReporteVentaService:
 
     def __init__(self):
         self.venta_repository = VentaRepository()
@@ -36,7 +36,7 @@ class ReporteVentasService:
                 "id": venta.id,
                 "fecha": venta.fecha,
                 "vendedor": f"{venta.id_usuario.first_name} {venta.id_usuario.last_name}" if venta.id_usuario and (venta.id_usuario.first_name or venta.id_usuario.last_name) else str(venta.id_usuario),
-                "metodo_pago": venta.id_metodoPago.tipo if venta.id_metodoPago else None,
+                "metodo_pago": venta.id_metodo_pago.tipo if venta.id_metodo_pago else None,
                 "total": venta.total,
                 "detalles": detalles
             })

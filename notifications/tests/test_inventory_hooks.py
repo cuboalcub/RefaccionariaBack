@@ -16,8 +16,8 @@ from tests.factories import (
     UserFactory,
 )
 from usuario.models import Perfil
-from ventas.services.detalleventa_service import DetalleVentaService
-from ventas.services.ventas_services import VentaService
+from ventas.services.detalle_venta_service import DetalleVentaService
+from ventas.services.venta_service import VentaService
 
 
 def _ctx():
@@ -91,7 +91,7 @@ class TestHooksInventario:
         _entrada(prod, inv, 10)
         mp = MetodoPagoFactory()
         v = VentaService().create(
-            {"id_usuario": user.id, "id_inventario": inv.id, "id_metodoPago": mp.id}
+            {"id_usuario": user.id, "id_inventario": inv.id, "id_metodo_pago": mp.id}
         )
         DetalleVentaService().create(
             {"id_producto": prod.id, "id_venta": v["id"], "cantidad": 10}, user=user

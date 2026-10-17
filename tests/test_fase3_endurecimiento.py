@@ -15,9 +15,9 @@ from django.db.models.deletion import ProtectedError
 
 from inventario.models import DetalleInventario, MovimientoInventario
 from inventario.services.detalle_inventario_service import DetalleInventarioService
-from ventas.models import detalleVenta, venta
-from ventas.services.detalleventa_service import DetalleVentaService
-from ventas.services.ventas_services import VentaService
+from ventas.models import DetalleVenta, Venta
+from ventas.services.detalle_venta_service import DetalleVentaService
+from ventas.services.venta_service import VentaService
 from tests.factories import (
     InventarioFactory,
     MetodoPagoFactory,
@@ -45,7 +45,7 @@ def _ctx(stock=10, precio=Decimal("100.00")):
     Perfil.objects.create(usuario=u, id_sucursal=suc, rol="encargado")
     mp = MetodoPagoFactory()
     v = VentaService().create(
-        {"id_usuario": u.id, "id_inventario": inv.id, "id_metodoPago": mp.id}
+        {"id_usuario": u.id, "id_inventario": inv.id, "id_metodo_pago": mp.id}
     )
     return suc, inv, prod, u, mp, v
 
@@ -58,11 +58,11 @@ class TestProtectAntiHuerfanos:
             {"id_producto": prod.id, "id_venta": v["id"], "cantidad": 2},
             user=u,
         )
-        det_obj = detalleVenta.objects.get(id=det["id"])
+        det_obj = DetalleVenta.objects.get(id=det["id"])
         with pytest.raises(ProtectedError):
             det_obj.delete()
         # Nada se corrompió: detalle, salida y stock intactos
-        assert detalleVenta.objects.filter(id=det["id"]).exists()
+        assert DetalleVenta.objects.filter(id=det["id"]).exists()
         assert DetalleInventario.objects.filter(id_detalle_venta_id=det["id"]).exists()
 
     def test_borrado_orm_directo_venta_bloqueado(self):
@@ -72,8 +72,8 @@ class TestProtectAntiHuerfanos:
             user=u,
         )
         with pytest.raises(ProtectedError):
-            venta.objects.get(id=v["id"]).delete()
-        assert venta.objects.filter(id=v["id"]).exists()
+            Venta.objects.get(id=v["id"]).delete()
+        assert Venta.objects.filter(id=v["id"]).exists()
 
     def test_borrado_por_servicio_sigue_funcionando(self):
         _, inv, prod, u, _, v = _ctx()
@@ -98,9 +98,9 @@ class TestProtectAntiHuerfanos:
             {"id_producto": prod.id, "id_venta": v["id"], "cantidad": 2},
             user=u,
         )
-        with mock.patch("ventas.models.venta.objects") as mobj:
+        with mock.patch("ventas.models.Venta.objects") as mobj:
             mobj.select_for_update.return_value.get.side_effect = (
-                venta.DoesNotExist()
+                Venta.DoesNotExist()
             )
             from repository.exceptions import NotFoundError
 
@@ -118,7 +118,7 @@ class TestContencionStock:
         )
         assert DetalleInventarioService().get_stock(prod.id, inv.id) == 0
         v2 = VentaService().create(
-            {"id_usuario": u.id, "id_inventario": inv.id, "id_metodoPago": mp.id}
+            {"id_usuario": u.id, "id_inventario": inv.id, "id_metodo_pago": mp.id}
         )
         with pytest.raises(ValueError, match="disponible|Stock"):
             DetalleVentaService().create(
@@ -126,7 +126,7 @@ class TestContencionStock:
                 user=u,
             )
         # Al liberar stock (5 -> 3), el competidor entra exacto
-        d1 = detalleVenta.objects.get(id_venta_id=v1["id"])
+        d1 = DetalleVenta.objects.get(id_venta_id=v1["id"])
         DetalleVentaService().update(d1.id, {"cantidad": 3}, user=u)
         assert DetalleInventarioService().get_stock(prod.id, inv.id) == 2
         DetalleVentaService().create(

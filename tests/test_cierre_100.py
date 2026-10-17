@@ -186,9 +186,9 @@ class TestDetalleUpdateMovimiento:
 @pytest.mark.django_db
 class TestAjustarExcept:
     def test_ajustar_tolerante_a_fallo_movimiento(self):
-        from ventas.models import venta
-        from ventas.services.detalleventa_service import DetalleVentaService
-        from ventas.services.ventas_services import VentaService
+        from ventas.models import Venta
+        from ventas.services.detalle_venta_service import DetalleVentaService
+        from ventas.services.venta_service import VentaService
 
         suc = SucursalFactory()
         inv = InventarioFactory(id_sucursal=suc)
@@ -209,15 +209,15 @@ class TestAjustarExcept:
             {
                 "id_usuario": u.id,
                 "id_inventario": inv.id,
-                "id_metodoPago": mp.id,
+                "id_metodo_pago": mp.id,
             }
         )
         det = DetalleVentaService().create(
             {"id_producto": prod.id, "id_venta": v["id"], "cantidad": 2}, user=u
         )
-        from ventas.models import detalleVenta
+        from ventas.models import DetalleVenta
 
-        dv = detalleVenta.objects.get(id=det["id"])
+        dv = DetalleVenta.objects.get(id=det["id"])
         with patch.object(
             MovimientoInventario, "save", side_effect=Exception("boom")
         ):

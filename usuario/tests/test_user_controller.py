@@ -21,7 +21,7 @@ class UserControllerTestCase(TestCase):
             username="staff", email="staff@test.com", password="pass12345", is_staff=True
         )
 
-    @patch("usuario.services.usuario_services.UserService.login")
+    @patch("usuario.services.usuario_service.UserService.login")
     def test_login_success(self, mock_login):
         """Prueba que login con credenciales válidas devuelve 200"""
         mock_login.return_value = {"id": 1, "username": "testuser"}
@@ -32,7 +32,7 @@ class UserControllerTestCase(TestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["username"], "testuser")
 
-    @patch("usuario.services.usuario_services.UserService.login")
+    @patch("usuario.services.usuario_service.UserService.login")
     def test_login_invalid_credentials(self, mock_login):
         """Prueba que login con credenciales inválidas devuelve 401"""
         mock_login.return_value = None
@@ -43,7 +43,7 @@ class UserControllerTestCase(TestCase):
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
         self.assertIn("error", response.data)
 
-    @patch("usuario.services.usuario_services.UserService.get_all_users")
+    @patch("usuario.services.usuario_service.UserService.get_all_users")
     def test_get_users_requires_authentication(self, mock_get_all):
         """Prueba que GET sin token devuelve 401"""
         request = self.factory.get("/usuarios/")
@@ -51,7 +51,7 @@ class UserControllerTestCase(TestCase):
 
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
-    @patch("usuario.services.usuario_services.UserService.get_all_users")
+    @patch("usuario.services.usuario_service.UserService.get_all_users")
     def test_get_users_success(self, mock_get_all):
         """Prueba que GET devuelve la lista de usuarios autenticado"""
         mock_get_all.return_value = [{"id": 1, "username": "user1"}]
@@ -63,7 +63,7 @@ class UserControllerTestCase(TestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data), 1)
 
-    @patch("usuario.services.usuario_services.UserService.create_user")
+    @patch("usuario.services.usuario_service.UserService.create_user")
     def test_create_user_success(self, mock_create_user):
         """Prueba que POST crea un usuario y devuelve 201"""
         mock_create_user.return_value = {"id": 1, "username": "nuevo"}
@@ -75,7 +75,7 @@ class UserControllerTestCase(TestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(response.data["username"], "nuevo")
 
-    @patch("usuario.services.usuario_services.UserService.create_user")
+    @patch("usuario.services.usuario_service.UserService.create_user")
     def test_create_user_bad_request(self, mock_create_user):
         """Prueba que POST devuelve 400 si ocurre un ValueError"""
         mock_create_user.side_effect = ValueError("Datos inválidos")
@@ -87,7 +87,7 @@ class UserControllerTestCase(TestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("error", response.data)
 
-    @patch("usuario.services.usuario_services.UserService.get_user_by_id")
+    @patch("usuario.services.usuario_service.UserService.get_user_by_id")
     def test_get_user_detail_requires_authentication(self, mock_get_user):
         """Prueba que GET por ID sin token devuelve 401"""
         request = self.factory.get("/usuarios/1/")
@@ -95,7 +95,7 @@ class UserControllerTestCase(TestCase):
 
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
-    @patch("usuario.services.usuario_services.UserService.get_user_by_id")
+    @patch("usuario.services.usuario_service.UserService.get_user_by_id")
     def test_get_user_detail_success(self, mock_get_user):
         """Prueba que GET por ID devuelve usuario correcto"""
         mock_get_user.return_value = {"id": 1, "username": "testuser"}
@@ -107,7 +107,7 @@ class UserControllerTestCase(TestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["username"], "testuser")
 
-    @patch("usuario.services.usuario_services.UserService.get_user_by_id")
+    @patch("usuario.services.usuario_service.UserService.get_user_by_id")
     def test_get_user_detail_not_found(self, mock_get_user):
         """Prueba que GET por ID inexistente devuelve 404"""
         mock_get_user.return_value = None
@@ -119,7 +119,7 @@ class UserControllerTestCase(TestCase):
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
         self.assertIn("error", response.data)
 
-    @patch("usuario.services.usuario_services.UserService.update_user")
+    @patch("usuario.services.usuario_service.UserService.update_user")
     def test_update_user_success(self, mock_update):
         """Prueba que PUT actualiza usuario correctamente"""
         mock_update.return_value = {"id": 1, "username": "modificado"}
@@ -131,7 +131,7 @@ class UserControllerTestCase(TestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["username"], "modificado")
 
-    @patch("usuario.services.usuario_services.UserService.update_user")
+    @patch("usuario.services.usuario_service.UserService.update_user")
     def test_update_user_bad_request(self, mock_update):
         """Prueba que PUT devuelve 400 si ocurre un ValueError"""
         mock_update.side_effect = ValueError("Error al actualizar")
@@ -143,7 +143,7 @@ class UserControllerTestCase(TestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("error", response.data)
 
-    @patch("usuario.services.usuario_services.UserService.delete_user")
+    @patch("usuario.services.usuario_service.UserService.delete_user")
     def test_delete_user_requires_staff(self, mock_delete):
         """Prueba que DELETE de un usuario normal devuelve 403"""
         request = self.factory.delete("/usuarios/1/")
@@ -152,7 +152,7 @@ class UserControllerTestCase(TestCase):
 
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
-    @patch("usuario.services.usuario_services.UserService.delete_user")
+    @patch("usuario.services.usuario_service.UserService.delete_user")
     def test_delete_user_success(self, mock_delete):
         """Prueba que DELETE elimina usuario correctamente (staff)"""
         mock_delete.return_value = True
@@ -163,7 +163,7 @@ class UserControllerTestCase(TestCase):
 
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
-    @patch("usuario.services.usuario_services.UserService.delete_user")
+    @patch("usuario.services.usuario_service.UserService.delete_user")
     def test_delete_user_not_found(self, mock_delete):
         """Prueba que DELETE de usuario inexistente devuelve 404 (staff)"""
         mock_delete.return_value = False

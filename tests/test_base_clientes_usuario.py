@@ -17,11 +17,11 @@ from clientes.services.cliente_service import ClienteService
 from sucursales.models import Sucursal
 from inventario.models import Inventario, MovimientoInventario, DetalleInventario, PrecioSucursal
 from producto.models import Tipo, Proveedor, Producto
-from ventas.models import metodoPago, venta, detalleVenta, Reporte
+from ventas.models import MetodoPago, Venta, DetalleVenta, Reporte
 from usuario.models import Perfil
 from usuario.serializers import UserSerializer
 from usuario.services.perfil_service import PerfilService
-from usuario.services.usuario_services import UserService
+from usuario.services.usuario_service import UserService
 
 pytestmark = pytest.mark.django_db
 
@@ -558,7 +558,7 @@ class TestPerfilService:
         assert PerfilService()._to_dict(None) is None
 
 
-# ================= usuario_services (53-54,59,68,73-77,81) =================
+# ================= usuario_service (53-54,59,68,73-77,81) =================
 class TestUserService:
     def test_get_all_users(self, user):
         assert len(UserService().get_all_users()) == 1
@@ -783,8 +783,8 @@ class TestModelsStr:
         assert "Reporte day" in str(r)
 
     def test_ventas_sin_str_no_rompen(self, user, inventario):
-        mp = metodoPago.objects.create(tipo="efectivo", descripcion="cash")
+        mp = MetodoPago.objects.create(tipo="efectivo", descripcion="cash")
         prod = Producto.objects.create(clave="KV", nombre="PV", codigo_barras="bv", precio_venta=Decimal("10"), marca="M", costo=Decimal("5"))
-        v = venta.objects.create(id_usuario=user, id_metodoPago=mp, id_inventario=inventario, total=Decimal("100"))
-        dv = detalleVenta.objects.create(id_producto=prod, id_venta=v, subtotal=Decimal("100"), cantidad=1)
+        v = Venta.objects.create(id_usuario=user, id_metodo_pago=mp, id_inventario=inventario, total=Decimal("100"))
+        dv = DetalleVenta.objects.create(id_producto=prod, id_venta=v, subtotal=Decimal("100"), cantidad=1)
         assert isinstance(str(mp), str) and isinstance(str(v), str) and isinstance(str(dv), str)

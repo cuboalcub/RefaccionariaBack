@@ -5,8 +5,8 @@ from decimal import Decimal
 
 from inventario.models import MovimientoInventario
 from inventario.services.detalle_inventario_service import DetalleInventarioService
-from ventas.models import detalleVenta, venta
-from ventas.services.ventas_services import VentaService
+from ventas.models import DetalleVenta, Venta
+from ventas.services.venta_service import VentaService
 from tests.factories import (
     InventarioFactory,
     MetodoPagoFactory,
@@ -53,7 +53,7 @@ class TestCrearVentaCompleta:
             {
                 "id_usuario": u.id,
                 "id_inventario": inv.id,
-                "id_metodoPago": mp.id,
+                "id_metodo_pago": mp.id,
                 "detalles": [
                     {"producto": prod_a.id, "cantidad": 2},
                     {"id_producto": prod_b.id, "cantidad": 1},
@@ -64,7 +64,7 @@ class TestCrearVentaCompleta:
         assert len(res["detalles"]) == 2
         assert DetalleInventarioService().get_stock(prod_a.id, inv.id) == 8
         assert DetalleInventarioService().get_stock(prod_b.id, inv.id) == 9
-        assert detalleVenta.objects.filter(id_venta_id=res["id"]).count() == 2
+        assert DetalleVenta.objects.filter(id_venta_id=res["id"]).count() == 2
         assert (
             MovimientoInventario.objects.filter(
                 tipo=MovimientoInventario.TipoMovimiento.SALIDA
@@ -78,14 +78,14 @@ class TestCrearVentaCompleta:
         # prod_b con stock 0: la entrada de cantidad 0 existe pero no suma.
         u = _user_en(suc)
         mp = MetodoPagoFactory()
-        n_ventas = venta.objects.count()
+        n_ventas = Venta.objects.count()
 
         with pytest.raises(ValueError, match="Línea 1"):
             VentaService().crear_venta_completa(
                 {
                     "id_usuario": u.id,
                     "id_inventario": inv.id,
-                    "id_metodoPago": mp.id,
+                    "id_metodo_pago": mp.id,
                     "detalles": [
                         {"producto": prod_a.id, "cantidad": 2},
                         {"producto": prod_b.id, "cantidad": 1},
@@ -93,8 +93,8 @@ class TestCrearVentaCompleta:
                 }
             )
         # Nada escrito: sin venta huérfana, sin detalles, stock intacto.
-        assert venta.objects.count() == n_ventas
-        assert detalleVenta.objects.count() == 0
+        assert Venta.objects.count() == n_ventas
+        assert DetalleVenta.objects.count() == 0
         assert DetalleInventarioService().get_stock(prod_a.id, inv.id) == 10
         assert (
             MovimientoInventario.objects.filter(
@@ -112,14 +112,14 @@ class TestCrearVentaCompleta:
                 {
                     "id_usuario": u.id,
                     "id_inventario": inv.id,
-                    "id_metodoPago": mp.id,
+                    "id_metodo_pago": mp.id,
                     "detalles": [
                         {"producto": prod.id, "cantidad": 1},
                         {"producto": 999999, "cantidad": 1},
                     ],
                 }
             )
-        assert venta.objects.count() == 0
+        assert Venta.objects.count() == 0
         assert DetalleInventarioService().get_stock(prod.id, inv.id) == 10
 
     def test_cantidad_cero_y_negativa_rechazadas(self):
@@ -129,7 +129,7 @@ class TestCrearVentaCompleta:
         base = {
             "id_usuario": u.id,
             "id_inventario": inv.id,
-            "id_metodoPago": mp.id,
+            "id_metodo_pago": mp.id,
         }
         with pytest.raises(ValueError, match="mayor a cero"):
             VentaService().crear_venta_completa(
@@ -143,7 +143,7 @@ class TestCrearVentaCompleta:
             VentaService().crear_venta_completa(
                 {**base, "detalles": [{"producto": prod.id, "cantidad": "2"}]}
             )
-        assert venta.objects.count() == 0
+        assert Venta.objects.count() == 0
         assert DetalleInventarioService().get_stock(prod.id, inv.id) == 10
 
     def test_producto_repetido_que_excede_stock_falla(self):
@@ -155,14 +155,14 @@ class TestCrearVentaCompleta:
                 {
                     "id_usuario": u.id,
                     "id_inventario": inv.id,
-                    "id_metodoPago": mp.id,
+                    "id_metodo_pago": mp.id,
                     "detalles": [
                         {"producto": prod.id, "cantidad": 2},
                         {"producto": prod.id, "cantidad": 2},
                     ],
                 }
             )
-        assert venta.objects.count() == 0
+        assert Venta.objects.count() == 0
         assert DetalleInventarioService().get_stock(prod.id, inv.id) == 3
 
     def test_lineas_malformadas_error_por_linea(self):
@@ -172,7 +172,7 @@ class TestCrearVentaCompleta:
         base = {
             "id_usuario": u.id,
             "id_inventario": inv.id,
-            "id_metodoPago": mp.id,
+            "id_metodo_pago": mp.id,
         }
         with pytest.raises(ValueError, match="Línea 0.*formato inválido"):
             VentaService().crear_venta_completa(
@@ -186,7 +186,7 @@ class TestCrearVentaCompleta:
             VentaService().crear_venta_completa(
                 {**base, "detalles": [{"producto": "abc", "cantidad": 2}]}
             )
-        assert venta.objects.count() == 0
+        assert Venta.objects.count() == 0
         assert DetalleInventarioService().get_stock(prod.id, inv.id) == 10
 
     def test_sin_detalles_falla(self):
@@ -198,7 +198,7 @@ class TestCrearVentaCompleta:
                 {
                     "id_usuario": u.id,
                     "id_inventario": inv.id,
-                    "id_metodoPago": mp.id,
+                    "id_metodo_pago": mp.id,
                     "detalles": [],
                 }
             )
@@ -220,7 +220,7 @@ class TestCrearVentaCompleta:
         ok = auth_client.post(
             "/api/ventas/",
             {
-                "id_metodoPago": mp.id,
+                "id_metodo_pago": mp.id,
                 "detalles": [
                     {"producto": prod_a.id, "cantidad": 2},
                     {"producto": prod_b.id, "cantidad": 1},
@@ -232,11 +232,11 @@ class TestCrearVentaCompleta:
         assert Decimal(ok.data["total"]) == Decimal("250.00")
         assert len(ok.data["detalles"]) == 2
 
-        n_ventas = venta.objects.count()
+        n_ventas = Venta.objects.count()
         bad = auth_client.post(
             "/api/ventas/",
             {
-                "id_metodoPago": mp.id,
+                "id_metodo_pago": mp.id,
                 "detalles": [
                     {"producto": prod_a.id, "cantidad": 1},
                     {"producto": prod_b.id, "cantidad": 5},
@@ -245,13 +245,13 @@ class TestCrearVentaCompleta:
             format="json",
         )
         assert bad.status_code == 400
-        assert venta.objects.count() == n_ventas
+        assert Venta.objects.count() == n_ventas
         assert DetalleInventarioService().get_stock(prod_a.id, inventario.id) == 8
 
     def test_api_legacy_sin_detalles_sigue_igual(self, auth_client, user, inventario, perfil):
         mp = MetodoPagoFactory()
         resp = auth_client.post(
-            "/api/ventas/", {"id_metodoPago": mp.id}, format="json"
+            "/api/ventas/", {"id_metodo_pago": mp.id}, format="json"
         )
         assert resp.status_code == 201
         assert Decimal(resp.data["total"]) == Decimal("0.00")

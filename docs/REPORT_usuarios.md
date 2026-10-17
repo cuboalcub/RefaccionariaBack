@@ -1,7 +1,7 @@
 # Módulo usuarios — reporte de validación
 
 ## Archivos inspeccionados
-`usuario/models.py` (Perfil.rol), `services/{usuario_services,perfil_service}.py`,
+`usuario/models.py` (Perfil.rol), `services/{usuario_service,perfil_service}.py`,
 `controllers/{usuario,perfil}_controller.py`, `migrations/0002_perfil_rol.py`,
 `repository/permissions.py` (matriz), `repository/base_controller.py` (permisos declarativos).
 

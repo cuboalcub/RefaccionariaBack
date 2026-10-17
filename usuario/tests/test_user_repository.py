@@ -1,6 +1,6 @@
 from django.test import TestCase
 from django.contrib.auth.models import User
-from usuario.repositories.usuario_repositorie import UserRepository
+from usuario.repositories.usuario_repository import UserRepository
 
 
 class UserRepositoryTestCase(TestCase):

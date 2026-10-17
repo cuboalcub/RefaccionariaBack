@@ -7,7 +7,7 @@ from django.contrib.auth.models import User
 from sucursales.models import Sucursal
 from inventario.models import Inventario, MovimientoInventario
 from producto.models import Tipo, Proveedor, Producto
-from ventas.models import metodoPago
+from ventas.models import MetodoPago
 from usuario.models import Perfil
 
 
@@ -86,7 +86,7 @@ class PerfilFactory(factory.django.DjangoModelFactory):
 
 class MetodoPagoFactory(factory.django.DjangoModelFactory):
     class Meta:
-        model = metodoPago
+        model = MetodoPago
 
     tipo = "EFECTIVO"
     descripcion = "Pago en efectivo"

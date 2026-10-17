@@ -2,9 +2,9 @@ from django.contrib.auth.models import User
 from django.test import TestCase
 
 from producto.models import Producto, Tipo, Proveedor
-from ventas.models import venta, metodoPago, detalleVenta
-from ventas.services.detalleventa_service import DetalleVentaService
-from ventas.services.ventas_services import VentaService
+from ventas.models import Venta, MetodoPago, DetalleVenta
+from ventas.services.detalle_venta_service import DetalleVentaService
+from ventas.services.venta_service import VentaService
 from inventario.models import Inventario, MovimientoInventario
 from inventario.services.detalle_inventario_service import DetalleInventarioService
 from sucursales.models import Sucursal
@@ -32,10 +32,10 @@ class DetalleVentaServiceTestCase(TestCase):
             costo="90.00",
         )
         self.usuario = User.objects.create_user(username="vendedor", password="pass12345")
-        self.metodo = metodoPago.objects.create(tipo="Efectivo", descripcion="Efectivo")
-        self.venta = venta.objects.create(
+        self.metodo = MetodoPago.objects.create(tipo="Efectivo", descripcion="Efectivo")
+        self.venta = Venta.objects.create(
             id_usuario=self.usuario,
-            id_metodoPago=self.metodo,
+            id_metodo_pago=self.metodo,
             id_inventario=self.inventario,
             total="150.00",
         )
@@ -60,7 +60,7 @@ class DetalleVentaServiceTestCase(TestCase):
         })
 
         self.assertEqual(self.inv_service.get_stock(self.producto.id, self.inventario.id), 8)
-        self.assertEqual(detalleVenta.objects.count(), 1)
+        self.assertEqual(DetalleVenta.objects.count(), 1)
         self.assertEqual(MovimientoInventario.objects.filter(tipo="SALIDA").count(), 1)
 
     def test_stock_insuficiente_lanza_value_error_y_rollback(self):
@@ -72,7 +72,7 @@ class DetalleVentaServiceTestCase(TestCase):
             })
 
         self.assertEqual(self.inv_service.get_stock(self.producto.id, self.inventario.id), 10)
-        self.assertEqual(detalleVenta.objects.count(), 0)
+        self.assertEqual(DetalleVenta.objects.count(), 0)
         self.assertEqual(MovimientoInventario.objects.filter(tipo="SALIDA").count(), 0)
 
     def test_create_requiere_campos_obligatorios(self):
@@ -179,7 +179,7 @@ class DetalleVentaServiceTestCase(TestCase):
             "cantidad": 3,
         })
 
-        detalle = detalleVenta.objects.get(id=resultado["id"])
+        detalle = DetalleVenta.objects.get(id=resultado["id"])
         self.assertEqual(str(detalle.subtotal), "450.00")
 
     def test_create_ignora_subtotal_del_cliente(self):
@@ -190,7 +190,7 @@ class DetalleVentaServiceTestCase(TestCase):
             "subtotal": "999.99",
         })
 
-        detalle = detalleVenta.objects.get(id=resultado["id"])
+        detalle = DetalleVenta.objects.get(id=resultado["id"])
         self.assertEqual(str(detalle.subtotal), "300.00")
 
     def test_update_calcula_subtotal_al_cambiar_cantidad(self):
@@ -202,7 +202,7 @@ class DetalleVentaServiceTestCase(TestCase):
 
         self.service.update(detalle_id, {"cantidad": 4})
 
-        detalle = detalleVenta.objects.get(id=detalle_id)
+        detalle = DetalleVenta.objects.get(id=detalle_id)
         self.assertEqual(str(detalle.subtotal), "600.00")
 
     def test_update_calcula_subtotal_al_cambiar_producto(self):
@@ -231,7 +231,7 @@ class DetalleVentaServiceTestCase(TestCase):
 
         self.service.update(detalle_id, {"id_producto": self.producto2.id})
 
-        detalle = detalleVenta.objects.get(id=detalle_id)
+        detalle = DetalleVenta.objects.get(id=detalle_id)
         self.assertEqual(str(detalle.subtotal), "400.00")
 
     def test_create_redondea_subtotal_decimal(self):
@@ -258,7 +258,7 @@ class DetalleVentaServiceTestCase(TestCase):
             "cantidad": 3,
         })
 
-        detalle = detalleVenta.objects.get(id=resultado["id"])
+        detalle = DetalleVenta.objects.get(id=resultado["id"])
         self.assertEqual(str(detalle.subtotal), "450.99")
 
 
@@ -270,12 +270,12 @@ class VentaServiceTestCase(TestCase):
             id_sucursal=self.sucursal, descripcion="Inventario general"
         )
         self.usuario = User.objects.create_user(username="vendedor", password="pass12345")
-        self.metodo = metodoPago.objects.create(tipo="Efectivo", descripcion="Efectivo")
+        self.metodo = MetodoPago.objects.create(tipo="Efectivo", descripcion="Efectivo")
         self.service = VentaService()
 
     def test_create_requiere_id_usuario(self):
         with self.assertRaises(ValueError):
-            self.service.create({"id_metodoPago": self.metodo.id, "id_inventario": self.inventario.id})
+            self.service.create({"id_metodo_pago": self.metodo.id, "id_inventario": self.inventario.id})
 
     def test_create_requiere_id_metodo_pago(self):
         with self.assertRaises(ValueError):
@@ -283,24 +283,24 @@ class VentaServiceTestCase(TestCase):
 
     def test_create_requiere_id_inventario(self):
         with self.assertRaises(ValueError):
-            self.service.create({"id_usuario": self.usuario.id, "id_metodoPago": self.metodo.id})
+            self.service.create({"id_usuario": self.usuario.id, "id_metodo_pago": self.metodo.id})
 
     def test_usuario_inexistente_lanza_value_error(self):
         with self.assertRaises(ValueError):
-            self.service.create({"id_usuario": 9999, "id_metodoPago": self.metodo.id, "id_inventario": self.inventario.id})
+            self.service.create({"id_usuario": 9999, "id_metodo_pago": self.metodo.id, "id_inventario": self.inventario.id})
 
     def test_metodo_inexistente_lanza_value_error(self):
         with self.assertRaises(ValueError):
-            self.service.create({"id_usuario": self.usuario.id, "id_metodoPago": 9999, "id_inventario": self.inventario.id})
+            self.service.create({"id_usuario": self.usuario.id, "id_metodo_pago": 9999, "id_inventario": self.inventario.id})
 
     def test_inventario_inexistente_lanza_value_error(self):
         with self.assertRaises(ValueError):
-            self.service.create({"id_usuario": self.usuario.id, "id_metodoPago": self.metodo.id, "id_inventario": 9999})
+            self.service.create({"id_usuario": self.usuario.id, "id_metodo_pago": self.metodo.id, "id_inventario": 9999})
 
     def test_create_exitoso(self):
         resultado = self.service.create({
             "id_usuario": self.usuario.id,
-            "id_metodoPago": self.metodo.id,
+            "id_metodo_pago": self.metodo.id,
             "id_inventario": self.inventario.id,
         })
 

@@ -3,7 +3,7 @@ from decimal import Decimal
 from django.core.exceptions import ValidationError
 from django.db import transaction
 
-from ventas.models import detalleVenta
+from ventas.models import DetalleVenta
 from ventas.repositories.detalle_venta_repository import DetalleVentaRepository
 from producto.models import Producto
 from producto.repositories.producto_repository import ProductoRepository
@@ -16,7 +16,7 @@ from repository.permissions import es_staff
 
 class DetalleVentaService(BaseService):
     def __init__(self, detalle_repo=None, producto_repo=None, venta_repo=None):
-        super().__init__(model=detalleVenta, repository=detalle_repo or DetalleVentaRepository())
+        super().__init__(model=DetalleVenta, repository=detalle_repo or DetalleVentaRepository())
         self.producto_repo = producto_repo or ProductoRepository()
         self.venta_repo = venta_repo or VentaRepository()
         self.inventario_service = DetalleInventarioService()
@@ -150,7 +150,7 @@ class DetalleVentaService(BaseService):
 
     def update(self, id, data, user=None):
         from inventario.models import DetalleInventario as _DetalleInv
-        from ventas.models import venta as _Venta
+        from ventas.models import Venta as _Venta
 
         with transaction.atomic():
             detalle = self.repository.get_by_id(id)

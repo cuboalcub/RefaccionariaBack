@@ -12,7 +12,7 @@ from ventas.services.venta_service import VentaService
 from repository.base_controller import BaseListController, BaseDetailController
 
 
-class VentasListController(BaseListController):
+class VentaListController(BaseListController):
     def __init__(self):
         super().__init__(VentaService)
 
@@ -84,7 +84,7 @@ class VentasListController(BaseListController):
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
-class VentasDetailController(BaseDetailController):
+class VentaDetailController(BaseDetailController):
     def __init__(self):
         super().__init__(VentaService)
 

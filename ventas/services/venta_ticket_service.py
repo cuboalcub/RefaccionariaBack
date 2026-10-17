@@ -1,4 +1,4 @@
-from ventas.models import venta
+from ventas.models import Venta
 from repository.exceptions import NotFoundError
 
 
@@ -6,10 +6,10 @@ class VentaTicketService:
 
     def get_ticket(self, venta_id):
         venta_obj = (
-            venta.objects
+            Venta.objects
             .select_related(
                 "id_usuario",
-                "id_metodoPago",
+                "id_metodo_pago",
                 "id_inventario__id_sucursal",
             )
             .prefetch_related(
@@ -53,8 +53,8 @@ class VentaTicketService:
                 else None
             ),
             "metodo_pago": (
-                venta_obj.id_metodoPago.tipo
-                if venta_obj.id_metodoPago
+                venta_obj.id_metodo_pago.tipo
+                if venta_obj.id_metodo_pago
                 else None
             ),
             "sucursal": (

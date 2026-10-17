@@ -10,9 +10,9 @@ from decimal import Decimal
 from inventario.models import DetalleInventario, MovimientoInventario
 from inventario.services.detalle_inventario_service import DetalleInventarioService
 from repository.exceptions import NotFoundError
-from ventas.models import detalleVenta, venta
-from ventas.services.detalleventa_service import DetalleVentaService
-from ventas.services.ventas_services import VentaService
+from ventas.models import DetalleVenta, Venta
+from ventas.services.detalle_venta_service import DetalleVentaService
+from ventas.services.venta_service import VentaService
 from tests.factories import (
     InventarioFactory,
     MetodoPagoFactory,
@@ -43,7 +43,7 @@ def _setup_venta_con_stock(cantidad_entrada=10, cantidad_venta=2):
         {
             "id_usuario": u.id,
             "id_inventario": inv.id,
-            "id_metodoPago": mp.id,
+            "id_metodo_pago": mp.id,
         }
     )
     DetalleVentaService().create(
@@ -64,8 +64,8 @@ class TestDeleteVentaRestauraStock:
         res = VentaService().delete(v["id"])
         assert "eliminado" in res["message"].lower()
 
-        assert venta.objects.filter(id=v["id"]).count() == 0
-        assert detalleVenta.objects.filter(id_venta_id=v["id"]).count() == 0
+        assert Venta.objects.filter(id=v["id"]).count() == 0
+        assert DetalleVenta.objects.filter(id_venta_id=v["id"]).count() == 0
         # Stock restaurado y sin movimientos SALIDA huérfanos.
         assert DetalleInventarioService().get_stock(prod.id, inv.id) == 10
         assert (
@@ -103,7 +103,7 @@ class TestDeleteVentaRestauraStock:
             {
                 "id_usuario": u.id,
                 "id_inventario": inv.id,
-                "id_metodoPago": mp.id,
+                "id_metodo_pago": mp.id,
             }
         )
         DetalleVentaService().create(
@@ -121,7 +121,7 @@ class TestDeleteVentaRestauraStock:
 
         assert DetalleInventarioService().get_stock(prod_a.id, inv.id) == 10
         assert DetalleInventarioService().get_stock(prod_b.id, inv.id) == 10
-        assert detalleVenta.objects.filter(id_venta_id=v["id"]).count() == 0
+        assert DetalleVenta.objects.filter(id_venta_id=v["id"]).count() == 0
 
     def test_delete_venta_sin_detalles_no_falla(self):
         u = UserFactory()
@@ -131,12 +131,12 @@ class TestDeleteVentaRestauraStock:
             {
                 "id_usuario": u.id,
                 "id_inventario": inv.id,
-                "id_metodoPago": mp.id,
+                "id_metodo_pago": mp.id,
             }
         )
         res = VentaService().delete(v["id"])
         assert "eliminado" in res["message"].lower()
-        assert venta.objects.filter(id=v["id"]).count() == 0
+        assert Venta.objects.filter(id=v["id"]).count() == 0
 
     def test_delete_venta_inexistente_404(self):
         with pytest.raises(NotFoundError):
@@ -156,8 +156,8 @@ class TestDeleteVentaRestauraStock:
             VentaService().delete(v["id"])
 
         # Rollback completo: venta, detalle y descuento siguen intactos.
-        assert venta.objects.filter(id=v["id"]).count() == 1
-        assert detalleVenta.objects.filter(id_venta_id=v["id"]).count() == 1
+        assert Venta.objects.filter(id=v["id"]).count() == 1
+        assert DetalleVenta.objects.filter(id_venta_id=v["id"]).count() == 1
         assert DetalleInventarioService().get_stock(prod.id, inv.id) == 8
 
     def test_api_delete_venta_restaura_stock(
@@ -181,7 +181,7 @@ class TestDeleteVentaRestauraStock:
         resp = auth_client.post(
             "/api/ventas/",
             {
-                "id_metodoPago": mp.id,
+                "id_metodo_pago": mp.id,
                 "detalles": [{"producto": prod.id, "cantidad": 2}],
             },
             format="json",

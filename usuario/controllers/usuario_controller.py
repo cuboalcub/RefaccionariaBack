@@ -4,7 +4,7 @@ from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated, IsAdminUser
 
 from repository.permissions import exigir_permiso
-from usuario.services.usuario_services import UserService
+from usuario.services.usuario_service import UserService
 
 
 class UserLoginView(APIView):

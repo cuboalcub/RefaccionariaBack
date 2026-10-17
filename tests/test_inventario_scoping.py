@@ -693,7 +693,7 @@ class TestRolesFase2:
         assert auth_client.get("/api/reporte/", {"tipo": "day"}).status_code == 403
 
     def test_login_expone_rol_y_registro_lo_ignora(self, api_client):
-        from usuario.services.usuario_services import UserService
+        from usuario.services.usuario_service import UserService
 
         enc = _encargado(SucursalFactory())
         c = _auth(enc)

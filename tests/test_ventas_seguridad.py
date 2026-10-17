@@ -7,9 +7,9 @@ from decimal import Decimal
 from rest_framework.test import APIClient
 
 from inventario.services.detalle_inventario_service import DetalleInventarioService
-from ventas.models import venta
-from ventas.services.detalleventa_service import DetalleVentaService
-from ventas.services.ventas_services import VentaService
+from ventas.models import Venta
+from ventas.services.detalle_venta_service import DetalleVentaService
+from ventas.services.venta_service import VentaService
 from tests.factories import (
     InventarioFactory,
     MetodoPagoFactory,
@@ -37,7 +37,7 @@ def _ctx(cantidad_entrada=10, precio=Decimal("100.00"), rol="cajero"):
     Perfil.objects.create(usuario=u, id_sucursal=suc, rol=rol)
     mp = MetodoPagoFactory()
     v = VentaService().create(
-        {"id_usuario": u.id, "id_inventario": inv.id, "id_metodoPago": mp.id}
+        {"id_usuario": u.id, "id_inventario": inv.id, "id_metodo_pago": mp.id}
     )
     return suc, inv, prod, u, mp, v
 
@@ -119,39 +119,39 @@ class TestPutVentaBlindado:
         c = _auth(u)
         resp = c.put(f"/api/ventas/{v['id']}/", {"total": "99.00"}, format="json")
         assert resp.status_code == 200
-        assert venta.objects.get(id=v["id"]).total == Decimal("200.00")
+        assert Venta.objects.get(id=v["id"]).total == Decimal("200.00")
 
-    def test_put_cambia_metodopago(self):
+    def test_put_cambia_metodo_pago(self):
         _, _, _, u, _, v = _ctx(rol="encargado")
         mp2 = MetodoPagoFactory(tipo="TARJETA", descripcion="Tarjeta")
         c = _auth(u)
         resp = c.put(
-            f"/api/ventas/{v['id']}/", {"id_metodoPago": mp2.id}, format="json"
+            f"/api/ventas/{v['id']}/", {"id_metodo_pago": mp2.id}, format="json"
         )
         assert resp.status_code == 200
-        assert venta.objects.get(id=v["id"]).id_metodoPago_id == mp2.id
+        assert Venta.objects.get(id=v["id"]).id_metodo_pago_id == mp2.id
 
-    def test_put_metodopago_inexistente_y_basura_400(self):
+    def test_put_metodo_pago_inexistente_y_basura_400(self):
         _, _, _, u, _, v = _ctx(rol="encargado")
         c = _auth(u)
         assert (
             c.put(
-                f"/api/ventas/{v['id']}/", {"id_metodoPago": 999999}, format="json"
+                f"/api/ventas/{v['id']}/", {"id_metodo_pago": 999999}, format="json"
             ).status_code
             == 400
         )
         assert (
             c.put(
-                f"/api/ventas/{v['id']}/", {"id_metodoPago": "abc"}, format="json"
+                f"/api/ventas/{v['id']}/", {"id_metodo_pago": "abc"}, format="json"
             ).status_code
             == 400
         )
 
-    def test_update_con_instancia_metodopago(self):
+    def test_update_con_instancia_metodo_pago(self):
         _, _, _, u, mp, v = _ctx()
-        res = VentaService().update(v["id"], {"id_metodoPago": mp, "total": "5.00"})
-        assert venta.objects.get(id=v["id"]).id_metodoPago_id == mp.id
-        assert venta.objects.get(id=v["id"]).total == Decimal("0.00")
+        res = VentaService().update(v["id"], {"id_metodo_pago": mp, "total": "5.00"})
+        assert Venta.objects.get(id=v["id"]).id_metodo_pago_id == mp.id
+        assert Venta.objects.get(id=v["id"]).total == Decimal("0.00")
 
 
 @pytest.mark.django_db
@@ -183,7 +183,7 @@ class TestScopingVentaDetalle:
             == 403
         )
         assert c.delete(f"/api/ventas/{v_a['id']}/").status_code == 403
-        assert venta.objects.filter(id=v_a["id"]).exists()
+        assert Venta.objects.filter(id=v_a["id"]).exists()
 
     def test_venta_otra_sucursal_staff_200(self, api_client, staff_user):
         _, _, _, _, v_a, _, _, _, _ = self._dos_sucursales()

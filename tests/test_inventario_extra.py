@@ -34,11 +34,11 @@ from tests.factories import (
 
 
 def _venta_con_detalle(producto):
-    """Crea venta + detalleVenta mínimos para probar salidas por venta."""
-    from ventas.models import detalleVenta, venta
+    """Crea venta + DetalleVenta mínimos para probar salidas por venta."""
+    from ventas.models import DetalleVenta, Venta
 
-    v = venta.objects.create(total=Decimal("100.00"))
-    dv = detalleVenta.objects.create(
+    v = Venta.objects.create(total=Decimal("100.00"))
+    dv = DetalleVenta.objects.create(
         id_producto=producto, id_venta=v, subtotal=Decimal("50.00"), cantidad=2
     )
     return v, dv
@@ -378,7 +378,7 @@ class TestDetalleUpdateDelete:
 
 
 @pytest.mark.django_db
-class TestDetalleVentasHelpers:
+class TestDetalleVentaHelpers:
     def test_crear_ajustar_revertir_salida(self):
         inv = InventarioFactory()
         prod = ProductoFactory()

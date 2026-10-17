@@ -5,13 +5,13 @@ from django.template.loader import render_to_string
 from django.http import HttpResponse
 from weasyprint import HTML
 from repository.permissions import exigir_permiso
-from ventas.services.reporte_venta_service import ReporteVentasService
+from ventas.services.reporte_venta_service import ReporteVentaService
 
 from django.core.files.base import ContentFile
 from ventas.models import Reporte
 
 
-class ReporteVentasView(APIView):
+class ReporteVentaView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
@@ -24,7 +24,7 @@ class ReporteVentasView(APIView):
         if not tipo:
             return HttpResponse("Debe enviar el parámetro 'tipo'", status=400)
 
-        service = ReporteVentasService()
+        service = ReporteVentaService()
 
         try:
             reporte = service.generar_reporte(

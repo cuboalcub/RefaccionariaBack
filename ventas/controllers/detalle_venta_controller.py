@@ -4,7 +4,7 @@ from rest_framework.response import Response
 from repository.base_controller import BaseDetailController, BaseListController
 from repository.exceptions import NotFoundError
 from repository.permissions import exigir_misma_sucursal, exigir_permiso
-from ventas.models import detalleVenta
+from ventas.models import DetalleVenta
 from ventas.services.detalle_venta_service import DetalleVentaService
 
 
@@ -31,7 +31,7 @@ class DetalleVentaDetail(BaseDetailController):
 
     def _check_sucursal(self, request, pk):
         """403 si un usuario no-staff opera un detalle de otra sucursal."""
-        det = detalleVenta.objects.select_related(
+        det = DetalleVenta.objects.select_related(
             "id_venta__id_inventario__id_sucursal"
         ).filter(id=pk).first()
         if det is None:

@@ -14,9 +14,9 @@ from tests.factories import (
     UserFactory,
 )
 from usuario.models import Perfil
-from usuario.services.usuario_services import UserService
-from ventas.services.reporte_ventas_service import ReporteVentasService
-from ventas.services.ventaTicket_service import VentaTicketService
+from usuario.services.usuario_service import UserService
+from ventas.services.reporte_venta_service import ReporteVentaService
+from ventas.services.venta_ticket_service import VentaTicketService
 
 
 def _auth(user):
@@ -52,7 +52,7 @@ class TestFlujoVentaCompleta:
         r = c.post(
             "/api/ventas/",
             {
-                "id_metodoPago": mp.id,
+                "id_metodo_pago": mp.id,
                 "detalles": [{"producto": prod.id, "cantidad": 2}],
             },
             format="json",
@@ -67,25 +67,25 @@ class TestFlujoVentaCompleta:
         assert t.data["total"] == "200.00"
         assert t.data["productos"][0]["cantidad"] == 2
 
-        rep = ReporteVentasService().generar_reporte("day")
+        rep = ReporteVentaService().generar_reporte("day")
         assert vid in [x["id"] for x in rep["ventas"]]
 
         assert c.delete(f"/api/ventas/{vid}/").status_code == 200
         assert DetalleInventarioService().get_stock(prod.id, inv.id) == 10
         assert c.get(f"/api/ventas/{vid}/ticket/").status_code == 404
-        rep2 = ReporteVentasService().generar_reporte("day")
+        rep2 = ReporteVentaService().generar_reporte("day")
         assert vid not in [x["id"] for x in rep2["ventas"]]
 
     def test_venta_parcial_no_deja_rastro_via_api(self):
         suc, inv, prod, enc, mp = _tienda(stock=1)
         c = _auth(enc)
-        from ventas.models import venta
+        from ventas.models import Venta
 
-        n = venta.objects.count()
+        n = Venta.objects.count()
         r = c.post(
             "/api/ventas/",
             {
-                "id_metodoPago": mp.id,
+                "id_metodo_pago": mp.id,
                 "detalles": [
                     {"producto": prod.id, "cantidad": 1},
                     {"producto": prod.id, "cantidad": 5},
@@ -94,16 +94,16 @@ class TestFlujoVentaCompleta:
             format="json",
         )
         assert r.status_code == 400
-        assert venta.objects.count() == n
+        assert Venta.objects.count() == n
         assert DetalleInventarioService().get_stock(prod.id, inv.id) == 1
 
     def test_ticket_directo_coincide_con_venta(self):
-        from ventas.services.ventas_services import VentaService
+        from ventas.services.venta_service import VentaService
 
         _, _, prod, enc, mp = _tienda()
         res = VentaService().crear_venta_completa(
             {
-                "id_metodoPago": mp.id,
+                "id_metodo_pago": mp.id,
                 "detalles": [{"producto": prod.id, "cantidad": 1}],
             },
             user=enc,
