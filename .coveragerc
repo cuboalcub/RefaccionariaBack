@@ -1,0 +1,21 @@
+[run]
+; Boilerplate Django sin lógica testeable
+omit =
+    */migrations/*
+    manage.py
+    RTR/wsgi.py
+    RTR/asgi.py
+    RTR/settings.py
+    RTR/settings_test.py
+    */admin.py
+    */apps.py
+    .venv/*
+    */.venv/*
+    graphify-out/*
+    scripts/*
+
+[report]
+show_missing = True
+skip_covered = False
+exclude_lines =
+    pragma: no cover

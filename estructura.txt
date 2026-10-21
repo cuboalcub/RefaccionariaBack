@@ -1,0 +1,469 @@
+.
+├── AGENTS.md
+├── clientes
+│   ├── admin.py
+│   ├── apps.py
+│   ├── controllers
+│   │   ├── cliente_controller.py
+│   │   ├── __init__.py
+│   │   └── __pycache__
+│   ├── __init__.py
+│   ├── migrations
+│   │   ├── 0001_initial.py
+│   │   ├── __init__.py
+│   │   └── __pycache__
+│   ├── models.py
+│   ├── __pycache__
+│   │   ├── admin.cpython-312.pyc
+│   │   ├── apps.cpython-312.pyc
+│   │   ├── __init__.cpython-312.pyc
+│   │   ├── models.cpython-312.pyc
+│   │   └── urls.cpython-312.pyc
+│   ├── repositories
+│   │   ├── cliente_repository.py
+│   │   ├── __init__.py
+│   │   └── __pycache__
+│   ├── services
+│   │   ├── cliente_service.py
+│   │   ├── __init__.py
+│   │   └── __pycache__
+│   ├── tests
+│   │   ├── __init__.py
+│   │   ├── __pycache__
+│   │   └── test_cliente_api.py
+│   └── urls.py
+├── db.sqlite3
+├── docs
+│   ├── INDICE.md
+│   ├── REPORT_catalogos.md
+│   ├── REPORT_inventario.md
+│   ├── REPORT_usuarios.md
+│   ├── REPORT_ventas.md
+│   └── RUNBOOK_migracion.md
+├── estructura.txt
+├── interfaces
+│   ├── controller.py
+│   ├── __init__.py
+│   ├── __pycache__
+│   │   ├── controller.cpython-312.pyc
+│   │   ├── __init__.cpython-312.pyc
+│   │   ├── repository.cpython-312.pyc
+│   │   └── service.cpython-312.pyc
+│   ├── repository.py
+│   └── service.py
+├── inventario
+│   ├── admin.py
+│   ├── apps.py
+│   ├── controllers
+│   │   ├── detalle_inventario_controller.py
+│   │   ├── inventario_controller.py
+│   │   ├── movimiento_inventario_controller.py
+│   │   ├── precio_sucursal_controller.py
+│   │   └── __pycache__
+│   ├── __init__.py
+│   ├── migrations
+│   │   ├── 0001_initial.py
+│   │   ├── 0002_detalleinventario_id_detalle_venta.py
+│   │   ├── 0003_detalleinventario_costo_and_more.py
+│   │   ├── 0004_remove_detalleinventario_costo_and_more.py
+│   │   ├── 0005_precio_sucursal.py
+│   │   ├── 0006_seed_precio_sucursal.py
+│   │   ├── 0007_alter_detalleinventario_id_detalle_venta.py
+│   │   ├── __init__.py
+│   │   └── __pycache__
+│   ├── models.py
+│   ├── __pycache__
+│   │   ├── admin.cpython-312.pyc
+│   │   ├── apps.cpython-312.pyc
+│   │   ├── __init__.cpython-312.pyc
+│   │   ├── models.cpython-312.pyc
+│   │   └── urls.cpython-312.pyc
+│   ├── repositories
+│   │   ├── detalle_inventario_repository.py
+│   │   ├── inventario_repository.py
+│   │   ├── movimiento_inventario_repository.py
+│   │   ├── precio_sucursal_repository.py
+│   │   └── __pycache__
+│   ├── services
+│   │   ├── detalle_inventario_service.py
+│   │   ├── inventario_service.py
+│   │   ├── movimiento_inventario_service.py
+│   │   ├── precio_sucursal_service.py
+│   │   └── __pycache__
+│   ├── tests
+│   │   ├── __init__.py
+│   │   ├── __pycache__
+│   │   └── test_legacy.py
+│   └── urls.py
+├── manage.py
+├── media
+│   └── reportes
+│       ├── reporte_day_2026-08-27_2026-08-28.pdf
+│       ├── reporte_day_2026-10-05_2026-10-06_1a6CZRO.pdf
+│       ├── reporte_day_2026-10-05_2026-10-06_1QRSq26.pdf
+│       ├── reporte_day_2026-10-05_2026-10-06_9SKjENs.pdf
+│       ├── reporte_day_2026-10-05_2026-10-06_9uWvxJO.pdf
+│       ├── reporte_day_2026-10-05_2026-10-06_dAyorFz.pdf
+│       ├── reporte_day_2026-10-05_2026-10-06_EmaBqWH.pdf
+│       ├── reporte_day_2026-10-05_2026-10-06_f1LjMCX.pdf
+│       ├── reporte_day_2026-10-05_2026-10-06_GTxZyQ2.pdf
+│       ├── reporte_day_2026-10-05_2026-10-06_Irx6D9L.pdf
+│       ├── reporte_day_2026-10-05_2026-10-06_Lpjbt97.pdf
+│       ├── reporte_day_2026-10-05_2026-10-06_ncq4OSg.pdf
+│       ├── reporte_day_2026-10-05_2026-10-06.pdf
+│       ├── reporte_day_2026-10-05_2026-10-06_pp78uZD.pdf
+│       ├── reporte_day_2026-10-05_2026-10-06_QJSgtRY.pdf
+│       ├── reporte_day_2026-10-05_2026-10-06_Y9PMxXV.pdf
+│       ├── reporte_day_2026-10-08_2026-10-09.pdf
+│       ├── reporte_day_2026-10-09_2026-10-10_7XyP80r.pdf
+│       ├── reporte_day_2026-10-09_2026-10-10_c9xX9oZ.pdf
+│       ├── reporte_day_2026-10-09_2026-10-10_kjQRqTK.pdf
+│       ├── reporte_day_2026-10-09_2026-10-10_lQbkU79.pdf
+│       ├── reporte_day_2026-10-09_2026-10-10_lxxtdt3.pdf
+│       ├── reporte_day_2026-10-09_2026-10-10_mos6mZm.pdf
+│       ├── reporte_day_2026-10-09_2026-10-10.pdf
+│       ├── reporte_day_2026-10-09_2026-10-10_ru5qNFT.pdf
+│       ├── reporte_day_2026-10-09_2026-10-10_uZifdoF.pdf
+│       ├── reporte_day_2026-10-10_2026-10-11_1X9nEpb.pdf
+│       ├── reporte_day_2026-10-10_2026-10-11_365LxBd.pdf
+│       ├── reporte_day_2026-10-10_2026-10-11_3qFHTsX.pdf
+│       ├── reporte_day_2026-10-10_2026-10-11_5vqD7tb.pdf
+│       ├── reporte_day_2026-10-10_2026-10-11_7aQtcRG.pdf
+│       ├── reporte_day_2026-10-10_2026-10-11_BM6VgKe.pdf
+│       ├── reporte_day_2026-10-10_2026-10-11_DopewjQ.pdf
+│       ├── reporte_day_2026-10-10_2026-10-11_GHp4XLp.pdf
+│       ├── reporte_day_2026-10-10_2026-10-11_jPnVjAh.pdf
+│       ├── reporte_day_2026-10-10_2026-10-11_kwLH4sC.pdf
+│       ├── reporte_day_2026-10-10_2026-10-11_mMjimVJ.pdf
+│       ├── reporte_day_2026-10-10_2026-10-11.pdf
+│       ├── reporte_day_2026-10-10_2026-10-11_qGKktfm.pdf
+│       ├── reporte_day_2026-10-10_2026-10-11_rT2oL47.pdf
+│       ├── reporte_day_2026-10-10_2026-10-11_sReGp0Z.pdf
+│       ├── reporte_day_2026-10-10_2026-10-11_YPizI5G.pdf
+│       ├── reporte_day_2026-10-11_2026-10-12_2ceJn5w.pdf
+│       ├── reporte_day_2026-10-11_2026-10-12_EJWqNLu.pdf
+│       ├── reporte_day_2026-10-11_2026-10-12_I8CPh1V.pdf
+│       ├── reporte_day_2026-10-11_2026-10-12_oS7eLnM.pdf
+│       ├── reporte_day_2026-10-11_2026-10-12.pdf
+│       ├── reporte_day_2026-10-15_2026-10-16_2YlIO7p.pdf
+│       ├── reporte_day_2026-10-15_2026-10-16_HNZrSYo.pdf
+│       ├── reporte_day_2026-10-15_2026-10-16.pdf
+│       ├── reporte_day_2026-10-15_2026-10-16_rK3GaXf.pdf
+│       ├── reporte_day_2026-10-15_2026-10-16_X8te4w6.pdf
+│       ├── reporte_day_2026-10-15_2026-10-16_yg6fQYU.pdf
+│       ├── reporte_day_2026-10-15_2026-10-16_zTBd4zd.pdf
+│       ├── reporte_quincena_2026-05-01_2026-05-16_1jYLQl3.pdf
+│       ├── reporte_quincena_2026-05-01_2026-05-16_2tqdKT2.pdf
+│       ├── reporte_quincena_2026-05-01_2026-05-16_2XRZJ4t.pdf
+│       ├── reporte_quincena_2026-05-01_2026-05-16_2Z5dZzO.pdf
+│       ├── reporte_quincena_2026-05-01_2026-05-16_30A9Tss.pdf
+│       ├── reporte_quincena_2026-05-01_2026-05-16_34rkWs6.pdf
+│       ├── reporte_quincena_2026-05-01_2026-05-16_4fA6a10.pdf
+│       ├── reporte_quincena_2026-05-01_2026-05-16_5eUomuE.pdf
+│       ├── reporte_quincena_2026-05-01_2026-05-16_7gxn3oV.pdf
+│       ├── reporte_quincena_2026-05-01_2026-05-16_7JUIwdr.pdf
+│       ├── reporte_quincena_2026-05-01_2026-05-16_ABcwnZQ.pdf
+│       ├── reporte_quincena_2026-05-01_2026-05-16_aSYFigk.pdf
+│       ├── reporte_quincena_2026-05-01_2026-05-16_BFkaaH6.pdf
+│       ├── reporte_quincena_2026-05-01_2026-05-16_BPes4zc.pdf
+│       ├── reporte_quincena_2026-05-01_2026-05-16_CJaGcTa.pdf
+│       ├── reporte_quincena_2026-05-01_2026-05-16_Cq9ZvWW.pdf
+│       ├── reporte_quincena_2026-05-01_2026-05-16_da755WE.pdf
+│       ├── reporte_quincena_2026-05-01_2026-05-16_dlPlzER.pdf
+│       ├── reporte_quincena_2026-05-01_2026-05-16_eSbbBNa.pdf
+│       ├── reporte_quincena_2026-05-01_2026-05-16_ExELWN0.pdf
+│       ├── reporte_quincena_2026-05-01_2026-05-16_FnsdNJh.pdf
+│       ├── reporte_quincena_2026-05-01_2026-05-16_GayIrRv.pdf
+│       ├── reporte_quincena_2026-05-01_2026-05-16_ggVMM4F.pdf
+│       ├── reporte_quincena_2026-05-01_2026-05-16_hKWs4b5.pdf
+│       ├── reporte_quincena_2026-05-01_2026-05-16_HNI0YMP.pdf
+│       ├── reporte_quincena_2026-05-01_2026-05-16_hYQtvfr.pdf
+│       ├── reporte_quincena_2026-05-01_2026-05-16_Jarsw4z.pdf
+│       ├── reporte_quincena_2026-05-01_2026-05-16_JdDNY70.pdf
+│       ├── reporte_quincena_2026-05-01_2026-05-16_Jxmz4QE.pdf
+│       ├── reporte_quincena_2026-05-01_2026-05-16_kNnDZd9.pdf
+│       ├── reporte_quincena_2026-05-01_2026-05-16_l0Yr4YI.pdf
+│       ├── reporte_quincena_2026-05-01_2026-05-16_LXYDFkM.pdf
+│       ├── reporte_quincena_2026-05-01_2026-05-16_O1bmcIX.pdf
+│       ├── reporte_quincena_2026-05-01_2026-05-16_pczRTgO.pdf
+│       ├── reporte_quincena_2026-05-01_2026-05-16.pdf
+│       ├── reporte_quincena_2026-05-01_2026-05-16_qs08LXk.pdf
+│       ├── reporte_quincena_2026-05-01_2026-05-16_QXvgNl1.pdf
+│       ├── reporte_quincena_2026-05-01_2026-05-16_Sd1GJx0.pdf
+│       ├── reporte_quincena_2026-05-01_2026-05-16_SRUiVCl.pdf
+│       ├── reporte_quincena_2026-05-01_2026-05-16_tOv7wi8.pdf
+│       ├── reporte_quincena_2026-05-01_2026-05-16_tXs0kNL.pdf
+│       ├── reporte_quincena_2026-05-01_2026-05-16_U0Eywuy.pdf
+│       ├── reporte_quincena_2026-05-01_2026-05-16_UEMsaMc.pdf
+│       ├── reporte_quincena_2026-05-01_2026-05-16_UlxB08o.pdf
+│       ├── reporte_quincena_2026-05-01_2026-05-16_uOmjdun.pdf
+│       ├── reporte_quincena_2026-05-01_2026-05-16_uwLhG9E.pdf
+│       ├── reporte_quincena_2026-05-01_2026-05-16_UyA2TG6.pdf
+│       ├── reporte_quincena_2026-05-01_2026-05-16_vPqDoCv.pdf
+│       ├── reporte_quincena_2026-05-01_2026-05-16_Wa8WpQd.pdf
+│       ├── reporte_quincena_2026-05-01_2026-05-16_x2hhrUe.pdf
+│       ├── reporte_quincena_2026-05-01_2026-05-16_XHamqTi.pdf
+│       ├── reporte_quincena_2026-05-01_2026-05-16_yn0eQmG.pdf
+│       ├── reporte_quincena_2026-05-01_2026-05-16_ZrAx3dW.pdf
+│       └── reporte_week_2026-08-24_2026-08-31.pdf
+├── notifications
+│   ├── apps.py
+│   ├── controllers
+│   │   ├── notification_controller.py
+│   │   └── __pycache__
+│   ├── __init__.py
+│   ├── migrations
+│   │   ├── 0001_initial.py
+│   │   ├── 0002_notification_persistente.py
+│   │   ├── __init__.py
+│   │   └── __pycache__
+│   ├── models.py
+│   ├── __pycache__
+│   │   ├── apps.cpython-312.pyc
+│   │   ├── __init__.cpython-312.pyc
+│   │   ├── models.cpython-312.pyc
+│   │   └── urls.cpython-312.pyc
+│   ├── repositories
+│   │   ├── notification_repository.py
+│   │   └── __pycache__
+│   ├── services
+│   │   ├── notification_service.py
+│   │   ├── __pycache__
+│   │   ├── stock_alerts.py
+│   │   └── thresholds.py
+│   ├── tests
+│   │   ├── conftest.py
+│   │   ├── __init__.py
+│   │   ├── __pycache__
+│   │   ├── test_inventory_hooks.py
+│   │   ├── test_migration_backup.py
+│   │   ├── test_notification_api.py
+│   │   ├── test_stock_alerts.py
+│   │   └── test_thresholds.py
+│   └── urls.py
+├── producto
+│   ├── admin.py
+│   ├── apps.py
+│   ├── controllers
+│   │   ├── producto_controller.py
+│   │   ├── proveedor_controller.py
+│   │   ├── __pycache__
+│   │   └── tipo_controller.py
+│   ├── __init__.py
+│   ├── migrations
+│   │   ├── 0001_initial.py
+│   │   ├── 0002_delete_notification.py
+│   │   ├── 0002_initial.py
+│   │   ├── 0004_remove_producto_existencia.py
+│   │   ├── 0005_merge_20261011_1415.py
+│   │   ├── __init__.py
+│   │   └── __pycache__
+│   ├── models.py
+│   ├── __pycache__
+│   │   ├── admin.cpython-312.pyc
+│   │   ├── apps.cpython-312.pyc
+│   │   ├── __init__.cpython-312.pyc
+│   │   ├── models.cpython-312.pyc
+│   │   └── urls.cpython-312.pyc
+│   ├── repositories
+│   │   ├── producto_repository.py
+│   │   ├── proveedor_repository.py
+│   │   ├── __pycache__
+│   │   └── tipo_repository.py
+│   ├── services
+│   │   ├── producto_service.py
+│   │   ├── proveedor_service.py
+│   │   ├── __pycache__
+│   │   └── tipo_service.py
+│   ├── tests
+│   │   ├── __init__.py
+│   │   └── __pycache__
+│   └── urls.py
+├── __pycache__
+│   └── manage.cpython-312.pyc
+├── pytest.ini
+├── README.md
+├── repository
+│   ├── base_controller.py
+│   ├── base_repository.py
+│   ├── base_service.py
+│   ├── exceptions.py
+│   ├── __init__.py
+│   ├── permissions.py
+│   └── __pycache__
+│       ├── base_controller.cpython-312.pyc
+│       ├── base_repository.cpython-312.pyc
+│       ├── base_service.cpython-312.pyc
+│       ├── exceptions.cpython-312.pyc
+│       ├── __init__.cpython-312.pyc
+│       └── permissions.cpython-312.pyc
+├── requirements.txt
+├── RTR
+│   ├── asgi.py
+│   ├── __init__.py
+│   ├── __pycache__
+│   │   ├── asgi.cpython-312.pyc
+│   │   ├── __init__.cpython-312.pyc
+│   │   ├── settings.cpython-312.pyc
+│   │   ├── settings_test.cpython-312.pyc
+│   │   ├── urls.cpython-312.pyc
+│   │   └── wsgi.cpython-312.pyc
+│   ├── settings.py
+│   ├── settings_test.py
+│   ├── urls.py
+│   └── wsgi.py
+├── skills-lock.json
+├── sucursales
+│   ├── admin.py
+│   ├── apps.py
+│   ├── controllers
+│   │   ├── __pycache__
+│   │   └── sucursal_controller.py
+│   ├── __init__.py
+│   ├── migrations
+│   │   ├── 0001_initial.py
+│   │   ├── 0002_sucursal_codigo_postal_sucursal_codigo_sucursal_and_more.py
+│   │   ├── 0003_sucursal_optional_fields.py
+│   │   ├── __init__.py
+│   │   └── __pycache__
+│   ├── models.py
+│   ├── __pycache__
+│   │   ├── admin.cpython-312.pyc
+│   │   ├── apps.cpython-312.pyc
+│   │   ├── __init__.cpython-312.pyc
+│   │   ├── models.cpython-312.pyc
+│   │   └── urls.cpython-312.pyc
+│   ├── repositories
+│   │   ├── __pycache__
+│   │   └── sucursal_repository.py
+│   ├── services
+│   │   ├── __pycache__
+│   │   └── sucursal_service.py
+│   ├── tests
+│   │   ├── __init__.py
+│   │   ├── __pycache__
+│   │   └── test_legacy.py
+│   └── urls.py
+├── tests
+│   ├── conftest.py
+│   ├── factories.py
+│   ├── __init__.py
+│   ├── __pycache__
+│   │   ├── conftest.cpython-312-pytest-9.1.1.pyc
+│   │   ├── factories.cpython-312.pyc
+│   │   ├── __init__.cpython-312.pyc
+│   │   ├── test_base_clientes_usuario.cpython-312-pytest-9.1.1.pyc
+│   │   ├── test_cierre_100.cpython-312-pytest-9.1.1.pyc
+│   │   ├── test_dbg_tmp.cpython-312-pytest-9.1.1.pyc
+│   │   ├── test_fase3_endurecimiento.cpython-312-pytest-9.1.1.pyc
+│   │   ├── test_flujos_e2e.cpython-312-pytest-9.1.1.pyc
+│   │   ├── test_inventario.cpython-312-pytest-9.1.1.pyc
+│   │   ├── test_inventario_extra.cpython-312-pytest-9.1.1.pyc
+│   │   ├── test_inventario_scoping.cpython-312-pytest-9.1.1.pyc
+│   │   ├── test_producto_sucursal.cpython-312-pytest-9.1.1.pyc
+│   │   ├── test_usuarios_gestion.cpython-312-pytest-9.1.1.pyc
+│   │   ├── test_ventas.cpython-312-pytest-9.1.1.pyc
+│   │   ├── test_ventas_creacion_atomica.cpython-312-pytest-9.1.1.pyc
+│   │   ├── test_ventas_delete_regresion.cpython-312-pytest-9.1.1.pyc
+│   │   ├── test_ventas_extra.cpython-312-pytest-9.1.1.pyc
+│   │   └── test_ventas_seguridad.cpython-312-pytest-9.1.1.pyc
+│   ├── test_base_clientes_usuario.py
+│   ├── test_cierre_100.py
+│   ├── test_fase3_endurecimiento.py
+│   ├── test_flujos_e2e.py
+│   ├── test_inventario_extra.py
+│   ├── test_inventario.py
+│   ├── test_inventario_scoping.py
+│   ├── test_producto_sucursal.py
+│   ├── test_usuarios_gestion.py
+│   ├── test_ventas_creacion_atomica.py
+│   ├── test_ventas_delete_regresion.py
+│   ├── test_ventas_extra.py
+│   ├── test_ventas.py
+│   └── test_ventas_seguridad.py
+├── usuario
+│   ├── admin.py
+│   ├── apps.py
+│   ├── controllers
+│   │   ├── perfil_controller.py
+│   │   ├── __pycache__
+│   │   └── usuario_controller.py
+│   ├── __init__.py
+│   ├── migrations
+│   │   ├── 0001_initial.py
+│   │   ├── 0002_perfil_rol.py
+│   │   ├── __init__.py
+│   │   └── __pycache__
+│   ├── models.py
+│   ├── __pycache__
+│   │   ├── admin.cpython-312.pyc
+│   │   ├── apps.cpython-312.pyc
+│   │   ├── __init__.cpython-312.pyc
+│   │   ├── models.cpython-312.pyc
+│   │   ├── serializers.cpython-312.pyc
+│   │   └── urls.cpython-312.pyc
+│   ├── repositories
+│   │   ├── perfil_repository.py
+│   │   ├── __pycache__
+│   │   └── usuario_repository.py
+│   ├── serializers.py
+│   ├── services
+│   │   ├── perfil_service.py
+│   │   ├── __pycache__
+│   │   └── usuario_service.py
+│   ├── tests
+│   │   ├── __init__.py
+│   │   ├── __pycache__
+│   │   ├── test_perfil_service.py
+│   │   ├── test_user_controller.py
+│   │   ├── test_user_repository.py
+│   │   └── test_user_service.py
+│   └── urls.py
+└── ventas
+    ├── admin.py
+    ├── apps.py
+    ├── controllers
+    │   ├── detalle_venta_controller.py
+    │   ├── metodo_pago_controller.py
+    │   ├── __pycache__
+    │   ├── venta_controller.py
+    │   └── venta_ticket_controller.py
+    ├── __init__.py
+    ├── migrations
+    │   ├── 0001_initial.py
+    │   ├── 0002_venta_id_inventario.py
+    │   ├── 0003_rename_id_metodopago_venta_id_metodo_pago.py
+    │   ├── __init__.py
+    │   └── __pycache__
+    ├── models.py
+    ├── __pycache__
+    │   ├── admin.cpython-312.pyc
+    │   ├── apps.cpython-312.pyc
+    │   ├── __init__.cpython-312.pyc
+    │   ├── models.cpython-312.pyc
+    │   └── urls.cpython-312.pyc
+    ├── repositories
+    │   ├── detalle_venta_repository.py
+    │   ├── metodo_pago_repository.py
+    │   ├── __pycache__
+    │   └── venta_repository.py
+    ├── services
+    │   ├── detalle_venta_service.py
+    │   ├── metodo_pago_service.py
+    │   ├── __pycache__
+    │   ├── reporte_venta_service.py
+    │   ├── venta_service.py
+    │   └── venta_ticket_service.py
+    ├── templates
+    │   └── ventas
+    ├── tests
+    │   ├── __init__.py
+    │   ├── __pycache__
+    │   └── test_legacy.py
+    ├── urls.py
+    └── views
+        ├── __init__.py
+        ├── __pycache__
+        └── reporte_venta_view.py
+
+101 directories, 366 files

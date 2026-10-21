@@ -17,6 +17,9 @@ Including another URLconf
 from django.contrib import admin
 from django.http import HttpResponse
 from django.urls import include, path
+from django.conf import settings
+from django.conf.urls.static import static
+
 def home(request):
     return HttpResponse("API is running successfully on Render!")
 
@@ -25,4 +28,12 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/', include('usuario.urls')),
     path('api/', include('producto.urls')),
+    path('api/', include('ventas.urls')),
+    path('api/', include('sucursales.urls')),
+    path('api/', include('inventario.urls')),
+    path('api/', include('clientes.urls')),
+    path('api/', include('notifications.urls')),
 ]
+
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

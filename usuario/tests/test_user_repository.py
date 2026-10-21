@@ -1,71 +1,61 @@
-import pytest
+from django.test import TestCase
 from django.contrib.auth.models import User
-from usuario.repositories.usuario_repositorie import UserRepository
+from usuario.repositories.usuario_repository import UserRepository
 
 
-@pytest.fixture
-def sample_user():
-    """Fixture que crea un usuario de prueba"""
-    return User.objects.create_user(
-        username="miguel",
-        email="miguel@gmail.com",
-        password="eldenring"
-    )
+class UserRepositoryTestCase(TestCase):
 
-
-@pytest.mark.django_db
-class TestUserRepository:
+    def setUp(self):
+        self.repo = UserRepository()
+        self.user = User.objects.create_user(
+            username="miguel",
+            email="miguel@gmail.com",
+            password="eldenring"
+        )
 
     def test_get_all_returns_all_users(self):
-        """Debe devolver todos los usuarios creados en la base de datos"""
-        User.objects.create_user(username="test1", email="test1@test.com", password="test")
-        users = UserRepository.get_all()
-        assert users.count() == 1
+        users = self.repo.get_all()
+        self.assertEqual(len(users), 1)
+        self.assertEqual(users[0].username, "miguel")
 
     def test_create_user_successfully(self):
-        """Debe crear un nuevo usuario"""
         data = {
             "username": "felipe",
             "email": "felipe@outlook.com",
             "password": "megutaeltoto"
         }
-        user = UserRepository.create(data)
+        user = self.repo.create(data)
 
-        assert user.id is not None
-        assert user.username == "felipe"
-        assert user.check_password("megutaeltoto")
+        self.assertIsNotNone(user.id)
+        self.assertEqual(user.username, "felipe")
+        self.assertTrue(user.check_password("megutaeltoto"))
 
-    def test_update_existing_user(self, sample_user):
-        """Debe actualizar los datos de un usuario existente"""
+    def test_update_existing_user(self):
         updated_data = {"email": "nuevo@nose.com"}
-        updated_user = UserRepository.update(sample_user.id, updated_data)
+        updated_user = self.repo.update(self.user, updated_data)
 
-        assert updated_user is not None
-        assert updated_user.email == "nuevo@nose.com"
+        self.assertIsNotNone(updated_user)
+        self.assertEqual(updated_user.email, "nuevo@nose.com")
 
     def test_update_nonexistent_user_returns_none(self):
-        """Si el usuario no existe devuelve none"""
-        result = UserRepository.update(9999, {"email": "x@example.com"})
-        assert result is None
+        result = self.repo.get_by_id(9999)
+        self.assertIsNone(result)
 
-    def test_delete_existing_user(self, sample_user):
-        """Debe eliminar un usuario existente"""
-        result = UserRepository.delete(sample_user.id)
-        assert result is True
-        assert User.objects.filter(id=sample_user.id).exists() is False
+    def test_delete_existing_user(self):
+        result = self.repo.delete(self.user)
+        self.assertTrue(result)
+        self.assertFalse(User.objects.filter(id=self.user.id).exists())
 
     def test_delete_nonexistent_user_returns_false(self):
-        """Si el usuario no existe devuelve false"""
-        result = UserRepository.delete(9999)
-        assert result is False
+        fake_user = User(id=9999)
+        result = self.repo.delete(fake_user)
+        self.assertFalse(result)
 
-    def test_get_by_username_existing_user(self, sample_user):
-        """Debe devolver el usuario correcto cuando existe el username"""
-        user = UserRepository.get_by_username("miguel")
-        assert user is not None
-        assert user.username == "miguel"
+    def test_get_by_username_existing_user(self):
+        user = self.repo.get_by_username("miguel")
+        self.assertIsNotNone(user)
+        self.assertEqual(user.username, "miguel")
 
     def test_get_by_username_nonexistent_user_returns_none(self):
-        """Si el usuario no existe devuelve none"""
-        user = UserRepository.get_by_username("no_existe")
-        assert user is None
+        user = self.repo.get_by_username("no_existe")
+        self.assertIsNone(user)
