@@ -108,10 +108,15 @@ WSGI_APPLICATION = "RTR.wsgi.application"
 
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
+_il_host = ("localhost" in (os.getenv("DATABASE_URL") or "")) or (
+    "127.0.0.1" in (os.getenv("DATABASE_URL") or "")
+)
 if os.getenv("DATABASE_URL"):
     DATABASES = {
         "default": dj_database_url.parse(
-            os.getenv("DATABASE_URL"), conn_max_age=600, ssl_require=True
+            os.getenv("DATABASE_URL"),
+            conn_max_age=600,
+            ssl_require=not _il_host,
         )
     }
 else:
