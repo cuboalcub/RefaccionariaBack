@@ -1,7 +1,5 @@
-from decimal import Decimal
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import transaction
-from ventas.services.detalle_venta_service import DetalleVentaService
 from ventas.models import Venta
 from ventas.repositories.venta_repository import VentaRepository
 from usuario.repositories.usuario_repository import UserRepository

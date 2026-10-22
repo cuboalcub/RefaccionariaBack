@@ -1,4 +1,4 @@
-from typing import List, Optional, Type, Dict, Any
+from typing import List, Optional, Dict, Any
 from decimal import Decimal
 from django.db import models
 from django.core.exceptions import ObjectDoesNotExist, ValidationError

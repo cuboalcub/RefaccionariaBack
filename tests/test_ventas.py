@@ -44,7 +44,7 @@ class TestVentaService:
 
     def test_create_via_jwt_deriva_inventario(self):
         suc = SucursalFactory()
-        inv = InventarioFactory(id_sucursal=suc)
+        InventarioFactory(id_sucursal=suc)
         u = UserFactory()
         Perfil.objects.create(usuario=u, id_sucursal=suc)
         mp = MetodoPagoFactory()

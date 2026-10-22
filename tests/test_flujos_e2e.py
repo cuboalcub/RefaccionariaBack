@@ -14,7 +14,6 @@ from tests.factories import (
     UserFactory,
 )
 from usuario.models import Perfil
-from usuario.services.usuario_service import UserService
 from ventas.services.reporte_venta_service import ReporteVentaService
 from ventas.services.venta_ticket_service import VentaTicketService
 

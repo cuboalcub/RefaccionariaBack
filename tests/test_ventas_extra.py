@@ -247,7 +247,7 @@ class TestVentaCreateExtra:
     def test_staff_override_sucursal_id(self):
         sa, sb = SucursalFactory(), SucursalFactory()
         InventarioFactory(id_sucursal=sa)
-        inv_b = InventarioFactory(id_sucursal=sb)
+        InventarioFactory(id_sucursal=sb)
         staff = UserFactory(is_staff=True)
         Perfil.objects.create(usuario=staff, id_sucursal=sa)
         mp = MetodoPagoFactory()
@@ -955,7 +955,7 @@ class TestRamasDefensivas:
         _entrada(prod, inv)
         owner = UserFactory()
         mp = MetodoPagoFactory()
-        v = _legacy_venta(owner, inv, mp)
+        _legacy_venta(owner, inv, mp)
         u = UserFactory()
         Perfil.objects.create(usuario=u, id_sucursal=suc)
         fake_venta = SimpleNamespace(

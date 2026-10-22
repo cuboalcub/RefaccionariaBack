@@ -1,4 +1,4 @@
-from typing import List, Optional, Type
+from typing import Type
 from interfaces.controller import ListCreateControllerInterface, DetailControllerInterface
 from interfaces.service import IService
 from repository.exceptions import NotFoundError

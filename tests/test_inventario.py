@@ -138,7 +138,7 @@ class TestPrecioSucursal:
         prod = ProductoFactory()
         svc = PrecioSucursalService()
 
-        p1 = svc.create(
+        svc.create(
             {"id_producto": prod.id, "id_sucursal": suc.id, "precio_venta": "100.00"}
         )
         p2 = svc.create(

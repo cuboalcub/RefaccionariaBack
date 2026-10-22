@@ -6,14 +6,13 @@ from unittest import mock
 import pytest
 from rest_framework.test import APIClient
 
-from producto.models import Producto, Proveedor, Tipo
+from producto.models import Producto
 from producto.repositories.producto_repository import ProductoRepository
 from producto.repositories.proveedor_repository import ProveedorRepository
 from producto.repositories.tipo_repository import TipoRepository
 from producto.services.producto_service import ProductoService
 from producto.services.proveedor_service import ProveedorService
 from producto.services.tipo_service import TipoService
-from sucursales.models import Sucursal
 from sucursales.repositories.sucursal_repository import SucursalRepository
 from sucursales.services.sucursal_service import SucursalService
 from inventario.services.detalle_inventario_service import DetalleInventarioService

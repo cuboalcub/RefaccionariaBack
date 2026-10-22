@@ -7,7 +7,6 @@ from django.contrib.auth.models import User
 
 from inventario.models import (
     DetalleInventario,
-    Inventario,
     MovimientoInventario,
     PrecioSucursal,
 )

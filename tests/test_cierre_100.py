@@ -4,14 +4,11 @@ import pytest
 from decimal import Decimal
 from unittest.mock import patch
 
-from django.contrib.auth.models import User
 
-from inventario.models import Inventario, MovimientoInventario
+from inventario.models import MovimientoInventario
 from inventario.services.detalle_inventario_service import DetalleInventarioService
 from inventario.services.precio_sucursal_service import PrecioSucursalService
-from producto.models import Producto
 from producto.services.producto_service import ProductoService
-from repository.exceptions import NotFoundError
 from tests.factories import (
     InventarioFactory,
     MetodoPagoFactory,
@@ -26,7 +23,6 @@ from usuario.models import Perfil
 @pytest.mark.django_db
 class TestMiSucursalPaginacion:
     def _ctx(self, api_client, n_inventarios=1, n_productos=3):
-        from rest_framework.test import APIClient
 
         suc = SucursalFactory()
         u = UserFactory()
@@ -186,7 +182,6 @@ class TestDetalleUpdateMovimiento:
 @pytest.mark.django_db
 class TestAjustarExcept:
     def test_ajustar_tolerante_a_fallo_movimiento(self):
-        from ventas.models import Venta
         from ventas.services.detalle_venta_service import DetalleVentaService
         from ventas.services.venta_service import VentaService
 

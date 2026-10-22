@@ -149,7 +149,7 @@ class TestPutVentaBlindado:
 
     def test_update_con_instancia_metodo_pago(self):
         _, _, _, u, mp, v = _ctx()
-        res = VentaService().update(v["id"], {"id_metodo_pago": mp, "total": "5.00"})
+        VentaService().update(v["id"], {"id_metodo_pago": mp, "total": "5.00"})
         assert Venta.objects.get(id=v["id"]).id_metodo_pago_id == mp.id
         assert Venta.objects.get(id=v["id"]).total == Decimal("0.00")
 

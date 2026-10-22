@@ -1,5 +1,4 @@
 """Cobertura: repository base, interfaces, usuario, clientes, models __str__."""
-import datetime
 from decimal import Decimal
 from unittest.mock import Mock, patch
 
@@ -15,7 +14,7 @@ from clientes.models import Cliente
 from clientes.repositories.cliente_repository import ClienteRepository
 from clientes.services.cliente_service import ClienteService
 from sucursales.models import Sucursal
-from inventario.models import Inventario, MovimientoInventario, DetalleInventario, PrecioSucursal
+from inventario.models import MovimientoInventario, DetalleInventario, PrecioSucursal
 from producto.models import Tipo, Proveedor, Producto
 from ventas.models import MetodoPago, Venta, DetalleVenta, Reporte
 from usuario.models import Perfil

@@ -6,7 +6,6 @@ from rest_framework.test import APIClient
 
 from tests.factories import SucursalFactory, UserFactory
 from usuario.models import Perfil
-from usuario.services.usuario_service import UserService
 
 
 def _auth(user):
