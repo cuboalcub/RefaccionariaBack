@@ -3,7 +3,7 @@ name: Deploy to Render
 on:
   push:
     branches:
-      - Deploy
+      - Develop
 
 concurrency:
   group: deploy-${{ github.ref }}
@@ -20,7 +20,7 @@ jobs:
 
       - name: Deploy to Render
         run: |
-          curl -X POST \
+          curl -fsS -X POST \
             -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
             -H "Content-Type: application/json" \
             "https://api.render.com/v1/services/srv-d3nvc3hr0fns73e08n60/deploys"
