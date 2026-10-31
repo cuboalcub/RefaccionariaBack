@@ -63,12 +63,12 @@ class ProductoService(BaseService):
         return qs
 
     def _productos_por_sucursal(self, sucursal_id, search, clave, marca, codigo_barras, tipo_id, proveedor_id):
-        from inventario.repositories.detalle_inventario_repository import DetalleInventarioRepository
+        from inventario.repositories.stock_repository import StockRepository
         from sucursales.models import Sucursal
 
         if not Sucursal.objects.filter(id=sucursal_id).exists():
             raise ValueError(f"Sucursal con id {sucursal_id} no encontrada")
-        stock_map = DetalleInventarioRepository().get_stock_map_por_sucursal(sucursal_id)
+        stock_map = StockRepository().get_stock_map_por_sucursal(sucursal_id)
         if not stock_map:
             return []
         qs = self._filtros(

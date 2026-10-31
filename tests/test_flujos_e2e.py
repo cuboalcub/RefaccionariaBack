@@ -5,9 +5,8 @@ from decimal import Decimal
 from django.contrib.auth.models import User
 from rest_framework.test import APIClient
 
-from inventario.services.detalle_inventario_service import DetalleInventarioService
+from inventario.services.movimiento_inventario_service import MovimientoInventarioService
 from tests.factories import (
-    InventarioFactory,
     MetodoPagoFactory,
     ProductoFactory,
     SucursalFactory,
@@ -26,12 +25,12 @@ def _auth(user):
 
 def _tienda(stock=10):
     suc = SucursalFactory()
-    inv = InventarioFactory(id_sucursal=suc)
+    inv = suc
     prod = ProductoFactory(precio_venta=Decimal("100.00"))
-    DetalleInventarioService().create(
+    MovimientoInventarioService().create(
         {
             "id_producto": prod.id,
-            "id_inventario": inv.id,
+            "id_sucursal": inv.id,
             "cantidad": stock,
             "tipo_movimiento": "ENTRADA",
             "razon": "Compra",
@@ -59,7 +58,7 @@ class TestFlujoVentaCompleta:
         assert r.status_code == 201
         vid = r.data["id"]
         assert r.data["total"] == "200.00"
-        assert DetalleInventarioService().get_stock(prod.id, inv.id) == 8
+        assert MovimientoInventarioService().get_stock(prod.id, inv.id) == 8
 
         t = c.get(f"/api/ventas/{vid}/ticket/")
         assert t.status_code == 200
@@ -70,8 +69,13 @@ class TestFlujoVentaCompleta:
         assert vid in [x["id"] for x in rep["ventas"]]
 
         assert c.delete(f"/api/ventas/{vid}/").status_code == 200
-        assert DetalleInventarioService().get_stock(prod.id, inv.id) == 10
-        assert c.get(f"/api/ventas/{vid}/ticket/").status_code == 404
+        assert MovimientoInventarioService().get_stock(prod.id, inv.id) == 10
+        # Cancelación suave: la venta sobrevive con estado cancelada.
+        detail = c.get(f"/api/ventas/{vid}/")
+        assert detail.status_code == 200
+        assert detail.data["estado"] == "cancelada"
+        assert c.get(f"/api/ventas/{vid}/ticket/").status_code == 200
+        # El reporte excluye canceladas.
         rep2 = ReporteVentaService().generar_reporte("day")
         assert vid not in [x["id"] for x in rep2["ventas"]]
 
@@ -94,7 +98,7 @@ class TestFlujoVentaCompleta:
         )
         assert r.status_code == 400
         assert Venta.objects.count() == n
-        assert DetalleInventarioService().get_stock(prod.id, inv.id) == 1
+        assert MovimientoInventarioService().get_stock(prod.id, inv.id) == 1
 
     def test_ticket_directo_coincide_con_venta(self):
         from ventas.services.venta_service import VentaService

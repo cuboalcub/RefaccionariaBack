@@ -15,6 +15,12 @@ from tests.factories import ProductoFactory, SucursalFactory, UserFactory
 
 MIG_0001 = [("notifications", "0001_initial")]
 MIG_0002 = [("notifications", "0002_notification_persistente")]
+MIG_LATEST = [
+    ("notifications", "0003_remove_notification_ref_inventario"),
+    # 0009 depende de notifications.0003: al retroceder se desaplica y hay
+    # que reaplicarlo para dejar la DB completa en latest.
+    ("inventario", "0009_stock"),
+]
 LEGACY = "notifications_notification_legacy"
 NUEVA = "notifications_notification"
 COLUMNAS_VIEJAS = {"id", "tipo", "mensaje", "leido", "creado_en", "producto_id"}
@@ -23,6 +29,7 @@ COLUMNAS_NUEVAS = {
     "creada_en", "resuelta_en", "ref_producto_id", "ref_sucursal_id",
     "ref_inventario_id", "stock",
 }
+COLUMNAS_LATEST = COLUMNAS_NUEVAS - {"ref_inventario_id"}
 
 
 def _migrar(objetivos):
@@ -64,7 +71,7 @@ def _volver_a_latest():
     # previo (si no, el guard abortaría), se avanza (recrea el respaldo
     # desde las filas viejas) y se retira para aislar otras pruebas.
     _limpiar_legacy()
-    _migrar(MIG_0002)
+    _migrar(MIG_LATEST)
     _limpiar_legacy()
 
 
@@ -104,7 +111,7 @@ class TestMigracionRespaldo:
                 cursor.execute(f'SELECT COUNT(*) FROM "{NUEVA}"')
                 assert cursor.fetchone()[0] == 0
         finally:
-            _limpiar_legacy()
+            _volver_a_latest()
 
     def test_forward_sin_filas_no_crea_legacy(self):
         _ir_a_0001()
@@ -113,7 +120,7 @@ class TestMigracionRespaldo:
             assert LEGACY not in _tablas()
             assert _columnas(NUEVA) == COLUMNAS_NUEVAS
         finally:
-            _limpiar_legacy()
+            _volver_a_latest()
 
     def test_reintento_tras_fallo_deja_todo_como_antes(self):
         _ir_a_0001()
@@ -134,7 +141,7 @@ class TestMigracionRespaldo:
             assert _leer_legacy() == valores
             assert _columnas(NUEVA) == COLUMNAS_NUEVAS
         finally:
-            _limpiar_legacy()
+            _volver_a_latest()
 
     def test_legacy_previa_aborta_sin_sobrescribir(self):
         _ir_a_0001()
@@ -177,7 +184,7 @@ class TestMigracionRespaldo:
     def test_instalacion_limpia_sin_legacy_y_con_constraint(self):
         # La DB de test ya es instalación limpia en latest.
         assert LEGACY not in _tablas()
-        assert _columnas(NUEVA) == COLUMNAS_NUEVAS
+        assert _columnas(NUEVA) == COLUMNAS_LATEST
         from notifications.models import Notification
 
         user = UserFactory()

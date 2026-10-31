@@ -1,20 +1,20 @@
-"""Regresión Bug A: DELETE venta debe restaurar stock y no dejar huérfanos.
+"""Regresión Bug A: DELETE venta = cancelación suave.
 
-Cubre solo el punto 1: override de VentaService.delete con atomic +
-reversión de inventario.
+El override de VentaService.delete con atomic + reversión de inventario
+ahora deja la venta con estado 'cancelada' (sin borrarla) y el stock
+restaurado, idempotente si se repite.
 """
 
 import pytest
 from decimal import Decimal
 
-from inventario.models import DetalleInventario, MovimientoInventario
-from inventario.services.detalle_inventario_service import DetalleInventarioService
+from inventario.models import MovimientoInventario
+from inventario.services.movimiento_inventario_service import MovimientoInventarioService
 from repository.exceptions import NotFoundError
 from ventas.models import DetalleVenta, Venta
 from ventas.services.detalle_venta_service import DetalleVentaService
 from ventas.services.venta_service import VentaService
 from tests.factories import (
-    InventarioFactory,
     MetodoPagoFactory,
     ProductoFactory,
     SucursalFactory,
@@ -25,12 +25,12 @@ from usuario.models import Perfil
 
 def _setup_venta_con_stock(cantidad_entrada=10, cantidad_venta=2):
     suc = SucursalFactory()
-    inv = InventarioFactory(id_sucursal=suc)
+    inv = suc
     prod = ProductoFactory(precio_venta=Decimal("100.00"))
-    DetalleInventarioService().create(
+    MovimientoInventarioService().create(
         {
             "id_producto": prod.id,
-            "id_inventario": inv.id,
+            "id_sucursal": inv.id,
             "cantidad": cantidad_entrada,
             "tipo_movimiento": "ENTRADA",
             "razon": "Compra",
@@ -42,7 +42,7 @@ def _setup_venta_con_stock(cantidad_entrada=10, cantidad_venta=2):
     v = VentaService().create(
         {
             "id_usuario": u.id,
-            "id_inventario": inv.id,
+            "id_sucursal": inv.id,
             "id_metodo_pago": mp.id,
         }
     )
@@ -59,38 +59,34 @@ class TestDeleteVentaRestauraStock:
         suc, inv, prod, u, v = _setup_venta_con_stock(
             cantidad_entrada=10, cantidad_venta=2
         )
-        assert DetalleInventarioService().get_stock(prod.id, inv.id) == 8
+        assert MovimientoInventarioService().get_stock(prod.id, inv.id) == 8
 
         res = VentaService().delete(v["id"])
-        assert "eliminado" in res["message"].lower()
+        assert "cancelada" in res["message"].lower()
 
-        assert Venta.objects.filter(id=v["id"]).count() == 0
-        assert DetalleVenta.objects.filter(id_venta_id=v["id"]).count() == 0
+        # La venta sobrevive con estado cancelada (historial intacto).
+        venta = Venta.objects.get(id=v["id"])
+        assert venta.estado == "cancelada"
+        assert DetalleVenta.objects.filter(id_venta_id=v["id"]).count() == 1
         # Stock restaurado y sin movimientos SALIDA huérfanos.
-        assert DetalleInventarioService().get_stock(prod.id, inv.id) == 10
+        assert MovimientoInventarioService().get_stock(prod.id, inv.id) == 10
         assert (
             MovimientoInventario.objects.filter(
                 tipo=MovimientoInventario.TipoMovimiento.SALIDA
             ).count()
             == 0
         )
-        # Sin SALIDA huérfana: ningún DetalleInventario de tipo SALIDA
-        # debe sobrevivir (la ENTRADA inicial sí tiene id_detalle_venta NULL
-        # por diseño).
-        assert DetalleInventario.objects.filter(
-            id_movimiento__tipo=MovimientoInventario.TipoMovimiento.SALIDA
-        ).count() == 0
 
     def test_delete_varios_detalles_restaura_todo(self):
         suc = SucursalFactory()
-        inv = InventarioFactory(id_sucursal=suc)
+        inv = suc
         prod_a = ProductoFactory(precio_venta=Decimal("50.00"))
         prod_b = ProductoFactory(precio_venta=Decimal("30.00"))
         for prod in (prod_a, prod_b):
-            DetalleInventarioService().create(
+            MovimientoInventarioService().create(
                 {
                     "id_producto": prod.id,
-                    "id_inventario": inv.id,
+                    "id_sucursal": inv.id,
                     "cantidad": 10,
                     "tipo_movimiento": "ENTRADA",
                     "razon": "Compra",
@@ -102,7 +98,7 @@ class TestDeleteVentaRestauraStock:
         v = VentaService().create(
             {
                 "id_usuario": u.id,
-                "id_inventario": inv.id,
+                "id_sucursal": inv.id,
                 "id_metodo_pago": mp.id,
             }
         )
@@ -114,29 +110,40 @@ class TestDeleteVentaRestauraStock:
             {"id_producto": prod_b.id, "id_venta": v["id"], "cantidad": 3},
             user=u,
         )
-        assert DetalleInventarioService().get_stock(prod_a.id, inv.id) == 8
-        assert DetalleInventarioService().get_stock(prod_b.id, inv.id) == 7
+        assert MovimientoInventarioService().get_stock(prod_a.id, inv.id) == 8
+        assert MovimientoInventarioService().get_stock(prod_b.id, inv.id) == 7
 
         VentaService().delete(v["id"])
 
-        assert DetalleInventarioService().get_stock(prod_a.id, inv.id) == 10
-        assert DetalleInventarioService().get_stock(prod_b.id, inv.id) == 10
-        assert DetalleVenta.objects.filter(id_venta_id=v["id"]).count() == 0
+        assert MovimientoInventarioService().get_stock(prod_a.id, inv.id) == 10
+        assert MovimientoInventarioService().get_stock(prod_b.id, inv.id) == 10
+        assert Venta.objects.get(id=v["id"]).estado == "cancelada"
+
+    def test_delete_es_idempotente(self):
+        suc, inv, prod, u, v = _setup_venta_con_stock()
+        VentaService().delete(v["id"])
+        assert MovimientoInventarioService().get_stock(prod.id, inv.id) == 10
+
+        # Segunda cancelación no vuelve a revertir ni lanza.
+        res = VentaService().delete(v["id"])
+        assert "ya estaba cancelada" in res["message"]
+        assert Venta.objects.get(id=v["id"]).estado == "cancelada"
+        assert MovimientoInventarioService().get_stock(prod.id, inv.id) == 10
 
     def test_delete_venta_sin_detalles_no_falla(self):
         u = UserFactory()
-        inv = InventarioFactory()
+        inv = SucursalFactory()
         mp = MetodoPagoFactory()
         v = VentaService().create(
             {
                 "id_usuario": u.id,
-                "id_inventario": inv.id,
+                "id_sucursal": inv.id,
                 "id_metodo_pago": mp.id,
             }
         )
         res = VentaService().delete(v["id"])
-        assert "eliminado" in res["message"].lower()
-        assert Venta.objects.filter(id=v["id"]).count() == 0
+        assert "cancelada" in res["message"].lower()
+        assert Venta.objects.get(id=v["id"]).estado == "cancelada"
 
     def test_delete_venta_inexistente_404(self):
         with pytest.raises(NotFoundError):
@@ -150,28 +157,28 @@ class TestDeleteVentaRestauraStock:
             raise RuntimeError("fallo simulado de inventario")
 
         monkeypatch.setattr(
-            DetalleInventarioService, "revertir_salida_por_venta", _boom
+            MovimientoInventarioService, "revertir_salida_por_venta", _boom
         )
         with pytest.raises(RuntimeError, match="fallo simulado"):
             VentaService().delete(v["id"])
 
-        # Rollback completo: venta, detalle y descuento siguen intactos.
-        assert Venta.objects.filter(id=v["id"]).count() == 1
+        # Rollback completo: venta completada, detalle y descuento intactos.
+        assert Venta.objects.get(id=v["id"]).estado == "completada"
         assert DetalleVenta.objects.filter(id_venta_id=v["id"]).count() == 1
-        assert DetalleInventarioService().get_stock(prod.id, inv.id) == 8
+        assert MovimientoInventarioService().get_stock(prod.id, inv.id) == 8
 
     def test_api_delete_venta_restaura_stock(
-        self, auth_client, user, inventario, perfil
+        self, auth_client, user, sucursal, perfil
     ):
         perfil.rol = "encargado"
         perfil.save(update_fields=["rol"])
         from tests.factories import ProductoFactory
 
         prod = ProductoFactory(precio_venta=Decimal("100.00"))
-        DetalleInventarioService().create(
+        MovimientoInventarioService().create(
             {
                 "id_producto": prod.id,
-                "id_inventario": inventario.id,
+                "id_sucursal": sucursal.id,
                 "cantidad": 10,
                 "tipo_movimiento": "ENTRADA",
                 "razon": "Compra",
@@ -188,9 +195,13 @@ class TestDeleteVentaRestauraStock:
         )
         assert resp.status_code == 201
         venta_id = resp.data["id"]
-        assert DetalleInventarioService().get_stock(prod.id, inventario.id) == 8
+        assert MovimientoInventarioService().get_stock(prod.id, sucursal.id) == 8
 
         dele = auth_client.delete(f"/api/ventas/{venta_id}/")
         assert dele.status_code == 200
-        assert DetalleInventarioService().get_stock(prod.id, inventario.id) == 10
+        assert MovimientoInventarioService().get_stock(prod.id, sucursal.id) == 10
+        assert Venta.objects.get(id=venta_id).estado == "cancelada"
+        # Segundo DELETE: idempotente (200, sin doble reversión).
+        assert auth_client.delete(f"/api/ventas/{venta_id}/").status_code == 200
+        assert MovimientoInventarioService().get_stock(prod.id, sucursal.id) == 10
         assert auth_client.delete("/api/ventas/999999/").status_code == 404

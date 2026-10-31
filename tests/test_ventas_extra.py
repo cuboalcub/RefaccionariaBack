@@ -7,7 +7,7 @@ from unittest import mock
 import pytest
 from django.contrib.auth.models import AnonymousUser
 
-from inventario.services.detalle_inventario_service import DetalleInventarioService
+from inventario.services.movimiento_inventario_service import MovimientoInventarioService
 from inventario.services.precio_sucursal_service import PrecioSucursalService
 from repository.exceptions import NotFoundError
 from usuario.models import Perfil
@@ -21,7 +21,6 @@ from ventas.services.reporte_venta_service import ReporteVentaService
 from ventas.services.venta_ticket_service import VentaTicketService
 from ventas.services.venta_service import VentaService
 from tests.factories import (
-    InventarioFactory,
     MetodoPagoFactory,
     ProductoFactory,
     SucursalFactory,
@@ -32,15 +31,15 @@ from tests.factories import (
 # ---------------------------------------------------------------- helpers
 def _legacy_venta(user, inv, mp):
     return VentaService().create(
-        {"id_usuario": user.id, "id_inventario": inv.id, "id_metodo_pago": mp.id}
+        {"id_usuario": user.id, "id_sucursal": inv.id, "id_metodo_pago": mp.id}
     )
 
 
 def _entrada(prod, inv, qty=10):
-    DetalleInventarioService().create(
+    MovimientoInventarioService().create(
         {
             "id_producto": prod.id,
-            "id_inventario": inv.id,
+            "id_sucursal": inv.id,
             "cantidad": qty,
             "tipo_movimiento": "ENTRADA",
             "razon": "Compra",
@@ -50,7 +49,7 @@ def _entrada(prod, inv, qty=10):
 
 def _venta_con_stock(qty_venta=2, precio="100.00"):
     suc = SucursalFactory()
-    inv = InventarioFactory(id_sucursal=suc)
+    inv = suc
     prod = ProductoFactory(precio_venta=Decimal(precio))
     _entrada(prod, inv)
     user = UserFactory()
@@ -68,7 +67,7 @@ def _venta_con_stock(qty_venta=2, precio="100.00"):
 class TestVentaToDict:
     def test_sin_inventario_ni_relaciones(self):
         v = Venta.objects.create(
-            id_usuario=None, id_metodo_pago=None, id_inventario=None, total=Decimal("0.00")
+            id_usuario=None, id_metodo_pago=None, id_sucursal=None, total=Decimal("0.00")
         )
         d = VentaService()._to_dict(v)
         assert "id_inventario" not in d
@@ -77,25 +76,22 @@ class TestVentaToDict:
         assert d["id_metodo_pago"] is None
         assert d["fecha"] is not None
 
-    def test_id_sucursal_excepcion_devuelve_none(self):
-        class _BadInv:
-            id = 999
-
-            @property
-            def id_sucursal_id(self):
-                raise Exception("boom")
-
+    def test_campos_nuevos_en_dict(self):
         inst = SimpleNamespace(
             id=1,
             id_usuario=None,
             id_metodo_pago=None,
-            id_inventario=_BadInv(),
+            id_sucursal_id=7,
+            id_cliente_id=3,
+            estado="completada",
             total=Decimal("5.00"),
             fecha=None,
         )
         d = VentaService()._to_dict(inst)
         assert "id_inventario" not in d
-        assert d["id_sucursal"] is None
+        assert d["id_sucursal"] == 7
+        assert d["id_cliente"] == 3
+        assert d["estado"] == "completada"
         assert d["fecha"] is None
 
 
@@ -104,7 +100,7 @@ class TestVentaToDict:
 class TestVentaGetAll:
     def _dos_ventas(self):
         sa, sb = SucursalFactory(), SucursalFactory()
-        ia, ib = InventarioFactory(id_sucursal=sa), InventarioFactory(id_sucursal=sb)
+        ia, ib = sa, sb
         u, mp = UserFactory(), MetodoPagoFactory()
         _legacy_venta(u, ia, mp)
         _legacy_venta(u, ib, mp)
@@ -154,46 +150,31 @@ class TestVentaGetAll:
         assert pag["total"] == 1 and pag["sucursal_id"] == sb.id
 
 
-# ------------------------------------------- VentaService._resolve_inventario
+# ------------------------------- VentaService._sucursal_del_usuario / stock
 @pytest.mark.django_db
-class TestResolveInventario:
+class TestResuelveSucursal:
     def test_staff_sin_sucursal_falla(self):
         u = UserFactory()
         with pytest.raises(ValueError, match="no tiene una sucursal"):
-            VentaService()._resolve_inventario_for_user(u)
-
-    def test_sucursal_sin_inventario_falla(self):
-        suc = SucursalFactory()
-        u = UserFactory()
-        Perfil.objects.create(usuario=u, id_sucursal=suc)
-        with pytest.raises(ValueError, match="no tiene un inventario"):
-            VentaService()._resolve_inventario_for_user(u)
-
-    def test_multi_inventario_devuelve_primero(self):
-        suc = SucursalFactory()
-        i1, i2 = InventarioFactory(id_sucursal=suc), InventarioFactory(id_sucursal=suc)
-        u = UserFactory()
-        Perfil.objects.create(usuario=u, id_sucursal=suc)
-        inv = VentaService()._resolve_inventario_for_user(u)
-        assert inv.id == min(i1.id, i2.id)
+            VentaService()._sucursal_del_usuario(u)
 
     def test_fallback_perfil_no_cacheado(self):
         # perfil existe en DB pero user.perfil no cacheado -> fallback por query
         suc = SucursalFactory()
-        inv = InventarioFactory(id_sucursal=suc)
+        suc
         u = UserFactory()
         Perfil.objects.create(usuario=u, id_sucursal=suc)
         fresh = type(u).objects.get(id=u.id)
-        assert VentaService()._resolve_inventario_for_user(fresh).id == inv.id
+        assert VentaService()._sucursal_del_usuario(fresh) == suc.id
 
     def test_fallback_query_encuentra_perfil(self):
-        # descriptor/perfil ausente pero query sí lo encuentra (línea 121)
+        # perfil ausente como atributo pero query sí lo encuentra
         suc = SucursalFactory()
-        inv = InventarioFactory(id_sucursal=suc)
+        suc
         u = UserFactory()
         Perfil.objects.create(usuario=u, id_sucursal=suc)
         bare = SimpleNamespace(id=u.id, perfil=None)
-        assert VentaService()._resolve_inventario_for_user(bare).id == inv.id
+        assert VentaService()._sucursal_del_usuario(bare) == suc.id
 
 
 # ---------------------------------------------------------- VentaService.create
@@ -222,32 +203,32 @@ class TestVentaCreateExtra:
         u = UserFactory()
         with pytest.raises(ValueError, match="no encontrado"):
             VentaService().create({"id_usuario": u.id, "id_metodo_pago": 999999,
-                                   "id_inventario": 1})
+                                   "id_sucursal": 1})
 
-    def test_inventario_inexistente_legacy(self):
+    def test_sucursal_inexistente_legacy(self):
         u, mp = UserFactory(), MetodoPagoFactory()
-        with pytest.raises(ValueError, match="no encontrado"):
+        with pytest.raises(ValueError, match="no encontrada"):
             VentaService().create(
-                {"id_usuario": u.id, "id_metodo_pago": mp.id, "id_inventario": 999999}
+                {"id_usuario": u.id, "id_metodo_pago": mp.id, "id_sucursal": 999999}
             )
 
     def test_legacy_sin_inventario(self):
         u, mp = UserFactory(), MetodoPagoFactory()
-        with pytest.raises(ValueError, match="id_inventario"):
+        with pytest.raises(ValueError, match="id_sucursal"):
             VentaService().create({"id_usuario": u.id, "id_metodo_pago": mp.id})
 
     def test_legacy_con_anonymous_user(self):
-        u, inv, mp = UserFactory(), InventarioFactory(), MetodoPagoFactory()
+        u, inv, mp = UserFactory(), SucursalFactory(), MetodoPagoFactory()
         res = VentaService().create(
-            {"id_usuario": u.id, "id_inventario": inv.id, "id_metodo_pago": mp.id},
+            {"id_usuario": u.id, "id_sucursal": inv.id, "id_metodo_pago": mp.id},
             user=AnonymousUser(),
         )
         assert res["id_usuario"] == u.id
 
     def test_staff_override_sucursal_id(self):
         sa, sb = SucursalFactory(), SucursalFactory()
-        InventarioFactory(id_sucursal=sa)
-        InventarioFactory(id_sucursal=sb)
+        sa
+        sb
         staff = UserFactory(is_staff=True)
         Perfil.objects.create(usuario=staff, id_sucursal=sa)
         mp = MetodoPagoFactory()
@@ -274,12 +255,20 @@ class TestVentaCreateExtra:
             )
 
     def test_staff_sucursal_sin_inventario(self):
+        # el create ya no exige inventario: la venta nace con la sucursal y
+        # el inventario de stock se exige al operar detalles
         suc = SucursalFactory()
         staff = UserFactory(is_staff=True)
         mp = MetodoPagoFactory()
-        with pytest.raises(ValueError, match="no tiene un inventario"):
-            VentaService().create(
-                {"id_metodo_pago": mp.id, "sucursal_id": suc.id}, user=staff
+        res = VentaService().create(
+            {"id_metodo_pago": mp.id, "sucursal_id": suc.id}, user=staff
+        )
+        assert res["id_sucursal"] == suc.id
+        prod = ProductoFactory(precio_venta=Decimal("10.00"))
+        with pytest.raises(ValueError, match="no está disponible"):
+            DetalleVentaService().create(
+                {"id_producto": prod.id, "id_venta": res["id"], "cantidad": 1},
+                user=staff,
             )
 
     def test_staff_sin_sucursal_pide_explicito(self):
@@ -290,8 +279,8 @@ class TestVentaCreateExtra:
 
     def test_normal_ignora_override_usa_su_sucursal(self):
         sa, sb = SucursalFactory(), SucursalFactory()
-        InventarioFactory(id_sucursal=sa)
-        InventarioFactory(id_sucursal=sb)
+        sa
+        sb
         u = UserFactory()
         Perfil.objects.create(usuario=u, id_sucursal=sa)
         mp = MetodoPagoFactory()
@@ -311,7 +300,7 @@ class TestDetallePrecioRecalculo:
 
     def test_precio_aplicable_sin_inventario_en_venta(self):
         prod = ProductoFactory(precio_venta=Decimal("77.00"))
-        fake_venta = SimpleNamespace(id_inventario_id=None)
+        fake_venta = SimpleNamespace(id_sucursal_id=None)
         assert DetalleVentaService()._precio_aplicable(prod, fake_venta) == Decimal("77.00")
 
     def test_precio_aplicable_usa_precio_sucursal(self):
@@ -338,8 +327,8 @@ class TestDetalleUpdate:
 
     def test_venta_sin_inventario(self):
         suc, inv, prod, user, mp, v, det = _venta_con_stock()
-        Venta.objects.filter(id=v["id"]).update(id_inventario=None)
-        with pytest.raises(ValueError, match="no tiene inventario"):
+        Venta.objects.filter(id=v["id"]).update(id_sucursal=None)
+        with pytest.raises(ValueError, match="no tiene sucursal"):
             DetalleVentaService().update(det["id"], {"cantidad": 5})
 
     def test_cambio_producto_sin_stock(self):
@@ -383,7 +372,7 @@ class TestDetalleDelete:
 class TestDetalleCrossSucursal:
     def test_staff_bypass_cross_sucursal(self):
         sa, sb = SucursalFactory(), SucursalFactory()
-        inv_a = InventarioFactory(id_sucursal=sa)
+        inv_a = sa
         prod = ProductoFactory(precio_venta=Decimal("100.00"))
         _entrada(prod, inv_a)
         owner = UserFactory()
@@ -398,7 +387,7 @@ class TestDetalleCrossSucursal:
 
     def test_producto_stock_0_mensaje(self):
         suc = SucursalFactory()
-        inv = InventarioFactory(id_sucursal=suc)
+        inv = suc
         prod = ProductoFactory()  # sin movimientos -> stock 0
         u = UserFactory()
         Perfil.objects.create(usuario=u, id_sucursal=suc)
@@ -420,9 +409,9 @@ class TestDetalleCrossSucursal:
         prod = ProductoFactory()
         u, mp = UserFactory(), MetodoPagoFactory()
         v = Venta.objects.create(
-            id_usuario=u, id_metodo_pago=mp, id_inventario=None, total=Decimal("0.00")
+            id_usuario=u, id_metodo_pago=mp, id_sucursal=None, total=Decimal("0.00")
         )
-        with pytest.raises(ValueError, match="no tiene inventario"):
+        with pytest.raises(ValueError, match="no tiene sucursal"):
             DetalleVentaService().create(
                 {"id_producto": prod.id, "id_venta": v.id, "cantidad": 1}
             )
@@ -465,7 +454,7 @@ class TestVentaTicket:
         assert t["fecha"] is not None
         assert t["vendedor"] == user.username
         assert t["metodo_pago"] == mp.tipo
-        assert t["sucursal"] == str(inv.id_sucursal)
+        assert t["sucursal"] == str(inv)
         assert t["total"] == "200.00"
         assert len(t["productos"]) == 1
         p = t["productos"][0]
@@ -477,7 +466,7 @@ class TestVentaTicket:
             VentaTicketService().get_ticket(999999)
 
     def test_detalle_cantidad_0(self):
-        u, inv, mp = UserFactory(), InventarioFactory(), MetodoPagoFactory()
+        u, inv, mp = UserFactory(), SucursalFactory(), MetodoPagoFactory()
         v = _legacy_venta(u, inv, mp)
         prod = ProductoFactory()
         DetalleVenta.objects.create(
@@ -489,7 +478,7 @@ class TestVentaTicket:
 
     def test_venta_sin_relaciones(self):
         v = Venta.objects.create(
-            id_usuario=None, id_metodo_pago=None, id_inventario=None,
+            id_usuario=None, id_metodo_pago=None, id_sucursal=None,
             total=Decimal("10.00"),
         )
         t = VentaTicketService().get_ticket(v.id)
@@ -505,7 +494,7 @@ class TestVentaTicket:
         fake_qs.all.return_value = [fake_det]
         fake_venta = SimpleNamespace(
             id=7, fecha=None, id_usuario=None, id_metodo_pago=None,
-            id_inventario=SimpleNamespace(id_sucursal=None),
+            id_sucursal=None,
             detalleventa_set=fake_qs, total=Decimal("10.00"),
         )
         chain = mock.MagicMock()
@@ -613,10 +602,10 @@ class TestReporteGenerar:
 
     def test_sin_metodo_y_detalles_vacios(self):
         suc = SucursalFactory()
-        inv = InventarioFactory(id_sucursal=suc)
+        inv = suc
         u = UserFactory()
         v = Venta.objects.create(
-            id_usuario=u, id_metodo_pago=None, id_inventario=inv, total=Decimal("0.00")
+            id_usuario=u, id_metodo_pago=None, id_sucursal=suc, total=Decimal("0.00")
         )
         rep = ReporteVentaService().generar_reporte("day")
         row = next(x for x in rep["ventas"] if x["id"] == v.id)
@@ -666,14 +655,14 @@ class TestReporteView:
 # --------------------------------------------------------------- controllers
 @pytest.mark.django_db
 class TestVentaController:
-    def test_get_propia_sucursal(self, auth_client, user, inventario):
+    def test_get_propia_sucursal(self, auth_client, user, sucursal):
         mp = MetodoPagoFactory()
-        otra = InventarioFactory()
+        otra = SucursalFactory()
         VentaService().create(
-            {"id_usuario": user.id, "id_inventario": otra.id, "id_metodo_pago": mp.id}
+            {"id_usuario": user.id, "id_sucursal": otra.id, "id_metodo_pago": mp.id}
         )
         VentaService().create(
-            {"id_usuario": user.id, "id_inventario": inventario.id,
+            {"id_usuario": user.id, "id_sucursal": sucursal.id,
              "id_metodo_pago": mp.id}
         )
         resp = auth_client.get("/api/ventas/")
@@ -685,7 +674,7 @@ class TestVentaController:
 
     def test_get_paginado_staff(self, api_client, staff_user):
         api_client.force_authenticate(user=staff_user)
-        u, inv, mp = UserFactory(), InventarioFactory(), MetodoPagoFactory()
+        u, inv, mp = UserFactory(), SucursalFactory(), MetodoPagoFactory()
         _legacy_venta(u, inv, mp)
         resp = api_client.get("/api/ventas/", {"page": "1", "page_size": "5"})
         assert resp.status_code == 200
@@ -698,7 +687,7 @@ class TestVentaController:
 
     def test_get_ignora_id_inventario_legacy(self, auth_client):
         # Parámetro retirado del contrato: se ignora, no rompe.
-        assert auth_client.get("/api/ventas/", {"id_inventario": "abc"}).status_code == 200
+        assert auth_client.get("/api/ventas/", {"id_sucursal": "abc"}).status_code == 200
 
     def test_get_usuario_sin_sucursal_400(self, api_client, user):
         api_client.force_authenticate(user=user)
@@ -713,7 +702,7 @@ class TestVentaController:
 
     def test_post_staff_override(self, api_client, staff_user):
         suc = SucursalFactory()
-        InventarioFactory(id_sucursal=suc)
+        suc
         api_client.force_authenticate(user=staff_user)
         mp = MetodoPagoFactory()
         resp = api_client.post(
@@ -724,22 +713,22 @@ class TestVentaController:
         assert resp.data["id_sucursal"] == suc.id
         assert "id_inventario" not in resp.data
 
-    def test_post_normal_ignora_sucursal_id(self, auth_client, user, inventario):
+    def test_post_normal_ignora_sucursal_id(self, auth_client, user, sucursal):
         otra = SucursalFactory()
-        InventarioFactory(id_sucursal=otra)
+        otra
         mp = MetodoPagoFactory()
         resp = auth_client.post(
             "/api/ventas/", {"id_metodo_pago": mp.id, "sucursal_id": otra.id},
             format="json",
         )
         assert resp.status_code == 201
-        assert resp.data["id_sucursal"] == inventario.id_sucursal_id
+        assert resp.data["id_sucursal"] == sucursal.id
 
-    def test_detail_get_put_delete(self, auth_client, user, perfil, inventario):
+    def test_detail_get_put_delete(self, auth_client, user, perfil, sucursal):
         perfil.rol = "encargado"
         perfil.save(update_fields=["rol"])
         mp = MetodoPagoFactory()
-        v = _legacy_venta(user, inventario, mp)
+        v = _legacy_venta(user, sucursal, mp)
         assert auth_client.get(f"/api/ventas/{v['id']}/").status_code == 200
         assert auth_client.get("/api/ventas/999999/").status_code == 404
         put = auth_client.put(
@@ -754,7 +743,7 @@ class TestVentaController:
 class TestDetalleController:
     def _ctx(self, api_client):
         suc = SucursalFactory()
-        inv = InventarioFactory(id_sucursal=suc)
+        inv = suc
         prod = ProductoFactory(precio_venta=Decimal("100.00"))
         _entrada(prod, inv)
         u = UserFactory()
@@ -903,7 +892,7 @@ class TestVentaModels:
 @pytest.mark.django_db
 class TestRamasDefensivas:
     def test_get_all_excepcion_generica(self):
-        u, inv, mp = UserFactory(), InventarioFactory(), MetodoPagoFactory()
+        u, inv, mp = UserFactory(), SucursalFactory(), MetodoPagoFactory()
         _legacy_venta(u, inv, mp)
         with mock.patch.object(
             VentaService, "_to_dict", side_effect=RuntimeError("boom")
@@ -920,22 +909,20 @@ class TestRamasDefensivas:
         user = SimpleNamespace(id=1, perfil=_Exploding())
         with mock.patch("usuario.models.Perfil") as mperfil:
             mperfil.objects.filter.side_effect = Exception("db down")
-            # filter lanza -> se captura y user_sucursal_id queda None
-            with pytest.raises(ValueError, match="no tiene una sucursal"):
-                VentaService()._resolve_inventario_for_user(user)
+        # filter lanza -> se captura y user_sucursal_id queda None
+        with pytest.raises(ValueError, match="no tiene una sucursal"):
+            VentaService()._sucursal_del_usuario(user)
 
     def test_precio_aplicable_inv_sin_attr(self):
         prod = ProductoFactory(precio_venta=Decimal("33.00"))
-        fake_venta = SimpleNamespace(
-            id_inventario_id=999999, id_inventario=SimpleNamespace()
-        )
+        fake_venta = SimpleNamespace(id_sucursal_id=999999)
         assert DetalleVentaService()._precio_aplicable(prod, fake_venta) == Decimal(
             "33.00"
         )
 
     def test_validar_perfil_sin_attrs_ok(self):
         suc = SucursalFactory()
-        inv = InventarioFactory(id_sucursal=suc)
+        inv = suc
         prod = ProductoFactory(precio_venta=Decimal("100.00"))
         _entrada(prod, inv)
         owner = UserFactory()
@@ -950,7 +937,7 @@ class TestRamasDefensivas:
 
     def test_validar_cross_inv_sin_attr(self):
         suc = SucursalFactory()
-        inv = InventarioFactory(id_sucursal=suc)
+        inv = suc
         prod = ProductoFactory(precio_venta=Decimal("100.00"))
         _entrada(prod, inv)
         owner = UserFactory()
@@ -958,61 +945,44 @@ class TestRamasDefensivas:
         _legacy_venta(owner, inv, mp)
         u = UserFactory()
         Perfil.objects.create(usuario=u, id_sucursal=suc)
-        fake_venta = SimpleNamespace(
-            id_inventario_id=inv.id, id_inventario=SimpleNamespace()
-        )
+        fake_venta = SimpleNamespace(id_sucursal_id=inv.id)
         DetalleVentaService()._validar_producto_en_inventario_sucursal(
             prod, fake_venta, user=u
-        )  # resuelve sucursal por query; no lanza
+        )  # mismo sucursal -> no lanza
 
-    def test_validar_cross_inv_explota_captura(self):
-        # hasattr() propaga excepciones no-AttributeError -> except (líneas 88-89)
-        class _BadInv:
-            @property
-            def id_sucursal_id(self):
-                raise Exception("boom")
-
-        suc = SucursalFactory()
-        inv = InventarioFactory(id_sucursal=suc)
+    def test_validar_cross_sucursal_lanza(self):
+        # venta de otra sucursal -> ValueError bloqueo
+        sa, sb = SucursalFactory(), SucursalFactory()
+        inv_a = sa
         prod = ProductoFactory(precio_venta=Decimal("100.00"))
-        _entrada(prod, inv)
+        _entrada(prod, inv_a)
+        owner = UserFactory()
+        mp = MetodoPagoFactory()
+        _legacy_venta(owner, inv_a, mp)
         u = UserFactory()
-        Perfil.objects.create(usuario=u, id_sucursal=suc)
-        fake_venta = SimpleNamespace(
-            id_inventario_id=inv.id, id_inventario=_BadInv()
-        )
-        DetalleVentaService()._validar_producto_en_inventario_sucursal(
-            prod, fake_venta, user=u
-        )  # sucursal None -> sin bloqueo cross; stock ok
+        Perfil.objects.create(usuario=u, id_sucursal=sb)
+        fake_venta = SimpleNamespace(id_sucursal_id=sa.id, estado="completada")
+        with pytest.raises(ValueError, match="no puede ser operada"):
+            DetalleVentaService()._validar_producto_en_inventario_sucursal(
+                prod, fake_venta, user=u
+            )
 
     def test_stock0_inv_sin_attr_mensaje_con_sucursal(self):
         suc = SucursalFactory()
-        inv = InventarioFactory(id_sucursal=suc)
+        inv = suc
         prod = ProductoFactory()  # sin stock
-        fake_venta = SimpleNamespace(
-            id_inventario_id=inv.id, id_inventario=SimpleNamespace()
-        )
-        with pytest.raises(ValueError, match=f"Sucursal {suc.id}"):
+        fake_venta = SimpleNamespace(id_sucursal_id=inv.id)
+        with pytest.raises(ValueError, match=f"sucursal {suc.id}"):
             DetalleVentaService()._validar_producto_en_inventario_sucursal(
                 prod, fake_venta
             )
 
-    def test_stock0_inv_explota_mensaje_sin_sucursal(self):
-        # mismo hasattr que explota en la rama de mensaje (líneas 107-108)
-        class _BadInv:
-            @property
-            def id_sucursal_id(self):
-                raise Exception("boom")
-
-        inv = InventarioFactory()
+    def test_venta_sin_sucursal_al_validar_stock(self):
+        # venta sin sucursal -> error antes de medir stock
         prod = ProductoFactory()  # sin stock
-        fake_venta = SimpleNamespace(
-            id_inventario_id=inv.id, id_inventario=_BadInv()
-        )
-        with pytest.raises(ValueError, match=r"\(Sucursal None\) - stock 0"):
-            DetalleVentaService()._validar_producto_en_inventario_sucursal(
-                prod, fake_venta
-            )
+        fake_venta = SimpleNamespace(id=1, id_sucursal_id=None)
+        with pytest.raises(ValueError, match="no tiene sucursal asignada"):
+            DetalleVentaService()._validar_venta_operable(fake_venta)
 
     def test_controller_get_valueerror_400(self, api_client, staff_user):
         api_client.force_authenticate(user=staff_user)
@@ -1022,7 +992,7 @@ class TestRamasDefensivas:
     def test_controller_get_perfil_por_query(self, api_client, user):
         # descriptor sin perfil pero query DB sí lo encuentra -> línea 37
         suc = SucursalFactory()
-        inv = InventarioFactory(id_sucursal=suc)
+        inv = suc
         mp = MetodoPagoFactory()
         _legacy_venta(UserFactory(), inv, mp)
         api_client.force_authenticate(user=user)  # user sin perfil

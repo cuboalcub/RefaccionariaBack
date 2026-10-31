@@ -65,9 +65,9 @@ class VentaListController(BaseListController):
 
     def post(self, request) -> Response:
         try:
-            # id_usuario e id_inventario nunca vienen del cliente: el usuario
-            # sale del JWT y el inventario se resuelve server-side.
-            # staff/superuser puede enviar sucursal_id como override explícito.
+            # id_usuario nunca viene del cliente: sale del JWT. La sucursal
+            # se resuelve server-side (perfil del usuario) y staff puede
+            # enviar sucursal_id como override explícito.
             exigir_permiso(request.user, PERM_VENTAS_VENDER)
             data = dict(request.data)
             data.pop("id_usuario", None)

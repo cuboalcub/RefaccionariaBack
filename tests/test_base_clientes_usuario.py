@@ -14,7 +14,7 @@ from clientes.models import Cliente
 from clientes.repositories.cliente_repository import ClienteRepository
 from clientes.services.cliente_service import ClienteService
 from sucursales.models import Sucursal
-from inventario.models import MovimientoInventario, DetalleInventario, PrecioSucursal
+from inventario.models import PrecioSucursal
 from producto.models import Tipo, Proveedor, Producto
 from ventas.models import MetodoPago, Venta, DetalleVenta, Reporte
 from usuario.models import Perfil
@@ -751,19 +751,6 @@ class TestModelsStr:
     def test_sucursal_str(self, sucursal):
         assert str(sucursal) == sucursal.ubicacion
 
-    def test_inventario_str(self, inventario):
-        assert "Inventario principal" in str(inventario)
-
-    def test_movimiento_str(self):
-        m = MovimientoInventario.objects.create(tipo="ENTRADA", cantidad=5, razon="compra")
-        assert str(m) == "ENTRADA - 5"
-
-    def test_detalle_inventario_str(self, inventario):
-        p = Producto.objects.create(clave="K1", nombre="Prod1", codigo_barras="b1", precio_venta=Decimal("9.99"), marca="M", costo=Decimal("4.00"))
-        m = MovimientoInventario.objects.create(tipo="ENTRADA", cantidad=2, razon="r")
-        d = DetalleInventario.objects.create(id_producto=p, id_inventario=inventario, id_movimiento=m, cantidad=2)
-        assert str(d) == f"{p} - 2"
-
     def test_precio_sucursal_str(self, sucursal):
         p = Producto.objects.create(clave="K2", nombre="Prod2", codigo_barras="b2", precio_venta=Decimal("9.99"), marca="M", costo=Decimal("4.00"))
         ps = PrecioSucursal.objects.create(id_producto=p, id_sucursal=sucursal, precio_venta=Decimal("12.50"))
@@ -781,9 +768,9 @@ class TestModelsStr:
         r = Reporte.objects.create(tipo="day", fecha_inicio=ahora, fecha_fin=ahora, archivo="reportes/x.pdf")
         assert "Reporte day" in str(r)
 
-    def test_ventas_sin_str_no_rompen(self, user, inventario):
+    def test_ventas_sin_str_no_rompen(self, user, sucursal):
         mp = MetodoPago.objects.create(tipo="efectivo", descripcion="cash")
         prod = Producto.objects.create(clave="KV", nombre="PV", codigo_barras="bv", precio_venta=Decimal("10"), marca="M", costo=Decimal("5"))
-        v = Venta.objects.create(id_usuario=user, id_metodo_pago=mp, id_inventario=inventario, total=Decimal("100"))
+        v = Venta.objects.create(id_usuario=user, id_metodo_pago=mp, id_sucursal=sucursal, total=Decimal("100"))
         dv = DetalleVenta.objects.create(id_producto=prod, id_venta=v, subtotal=Decimal("100"), cantidad=1)
         assert isinstance(str(mp), str) and isinstance(str(v), str) and isinstance(str(dv), str)

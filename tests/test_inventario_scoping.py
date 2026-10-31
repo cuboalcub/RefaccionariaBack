@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import pytest
 from rest_framework.test import APIClient
 
-from inventario.models import Inventario
+from inventario.models import MovimientoInventario, Stock
 from inventario.services.precio_sucursal_service import PrecioSucursalService
 from repository.permissions import (
     entero_o_none,
@@ -19,7 +19,6 @@ from repository.permissions import (
     sucursal_de_usuario,
 )
 from tests.factories import (
-    InventarioFactory,
     ProductoFactory,
     SucursalFactory,
     UserFactory,
@@ -37,21 +36,6 @@ def _encargado(suc=None):
     u = UserFactory()
     Perfil.objects.create(usuario=u, id_sucursal=suc, rol="encargado")
     return u
-
-
-def _ctx():
-    """Sucursal propia (inv_a) + otra (inv_b) + admin en la propia.
-
-    Admin (no staff) para cubrir los writes de inventarios; el scoping
-    por sucursal sigue aplicando igual que a encargado.
-    """
-    suc_a = SucursalFactory()
-    inv_a = InventarioFactory(id_sucursal=suc_a)
-    suc_b = SucursalFactory()
-    inv_b = InventarioFactory(id_sucursal=suc_b)
-    u = UserFactory()
-    Perfil.objects.create(usuario=u, id_sucursal=suc_a, rol="admin")
-    return suc_a, inv_a, suc_b, inv_b, u
 
 
 @pytest.mark.django_db
@@ -85,153 +69,46 @@ class TestPermisosCentrales:
 
 
 @pytest.mark.django_db
-class TestInventarioScoping:
-    def test_list_solo_propia(self, auth_client, perfil, inventario):
-        otra = InventarioFactory()
-        r = auth_client.get("/api/inventarios/")
-        assert r.status_code == 200
-        ids = [i["id"] for i in r.data]
-        assert inventario.id in ids and otra.id not in ids
+class TestStockScoping:
+    def _stock(self, suc, cantidad=5):
+        prod = ProductoFactory()
+        Stock.objects.create(id_producto=prod, id_sucursal=suc, cantidad=cantidad)
+        return prod
 
-    def test_list_staff_ve_todo(self, api_client, staff_user):
-        a, b = InventarioFactory(), InventarioFactory()
-        api_client.force_authenticate(user=staff_user)
-        r = api_client.get("/api/inventarios/")
+    def test_list_solo_propia(self, auth_client, perfil):
+        self._stock(perfil.id_sucursal)
+        self._stock(SucursalFactory())
+        r = auth_client.get("/api/stock/")
         assert r.status_code == 200
-        assert {a.id, b.id} <= {i["id"] for i in r.data}
+        assert {f["id_sucursal"] for f in r.data} == {perfil.id_sucursal_id}
+
+    def test_list_staff_ve_todo_y_filtra(self, api_client, staff_user):
+        a, b = SucursalFactory(), SucursalFactory()
+        self._stock(a)
+        self._stock(b)
+        api_client.force_authenticate(user=staff_user)
+        r = api_client.get("/api/stock/")
+        assert r.status_code == 200
+        assert {f["id_sucursal"] for f in r.data} == {a.id, b.id}
+        r = api_client.get(f"/api/stock/?sucursal_id={a.id}")
+        assert {f["id_sucursal"] for f in r.data} == {a.id}
+        assert api_client.get("/api/stock/?sucursal_id=abc").status_code == 400
 
     def test_list_sin_sucursal_400(self, api_client, user):
         api_client.force_authenticate(user=user)
-        assert api_client.get("/api/inventarios/").status_code == 400
-
-    def test_post_otra_sucursal_403(self):
-        _, _, _, inv_b, u = _ctx()
-        c = _auth(u)
-        r = c.post(
-            "/api/inventarios/",
-            {"id_sucursal": inv_b.id_sucursal_id, "descripcion": "X"},
-            format="json",
-        )
-        assert r.status_code == 403
-
-    def test_post_cajero_403_y_basura_400(self, api_client, user):
-        _, _, _, _, _ = _ctx()
-        cajero = UserFactory()
-        api_client.force_authenticate(user=cajero)
-        assert (
-            api_client.post(
-                "/api/inventarios/", {"descripcion": "X"}, format="json"
-            ).status_code
-            == 403
-        )
-        # encargado con formato inválido -> 400 (no 403)
-        _, _, _, _, enc = _ctx()
-        c = _auth(enc)
-        assert (
-            c.post(
-                "/api/inventarios/",
-                {"id_sucursal": "abc", "descripcion": "X"},
-                format="json",
-            ).status_code
-            == 400
-        )
-
-    def test_post_sin_sucursal_400(self):
-        adm_sin = UserFactory()
-        Perfil.objects.create(usuario=adm_sin, rol="admin")
-        c = _auth(adm_sin)
-        assert c.post("/api/inventarios/", {}, format="json").status_code == 400
-
-    def test_post_staff_201(self, api_client, staff_user):
-        suc = SucursalFactory()
-        api_client.force_authenticate(user=staff_user)
-        r = api_client.post(
-            "/api/inventarios/",
-            {"id_sucursal": suc.id, "descripcion": "Admin"},
-            format="json",
-        )
-        assert r.status_code == 201
-
-    def test_staff_errores_post_put(self, api_client, staff_user):
-        api_client.force_authenticate(user=staff_user)
-        assert api_client.post("/api/inventarios/", {}, format="json").status_code == 400
-        inv = InventarioFactory()
-        assert (
-            api_client.put(
-                f"/api/inventarios/{inv.id}/", {"id_sucursal": 999999}, format="json"
-            ).status_code
-            == 400
-        )
-
-    def test_detail_cross_403_y_staff_200(self, api_client, staff_user):
-        _, inv_a, _, inv_b, u = _ctx()
-        c = _auth(u)
-        assert c.get(f"/api/inventarios/{inv_b.id}/").status_code == 403
-        assert (
-            c.put(f"/api/inventarios/{inv_b.id}/", {"descripcion": "Z"}, format="json").status_code
-            == 403
-        )
-        assert c.delete(f"/api/inventarios/{inv_b.id}/").status_code == 403
-        assert Inventario.objects.filter(id=inv_b.id).exists()
-        api_client.force_authenticate(user=staff_user)
-        assert api_client.get(f"/api/inventarios/{inv_a.id}/").status_code == 200
-        assert api_client.delete(f"/api/inventarios/{inv_a.id}/").status_code == 200
-
-    def test_put_ignora_cambio_sucursal(self):
-        suc_a, inv_a, _, _, u = _ctx()
-        c = _auth(u)
-        r = c.put(
-            f"/api/inventarios/{inv_a.id}/",
-            {"descripcion": "Nueva", "id_sucursal": 999999},
-            format="json",
-        )
-        assert r.status_code == 200
-        assert Inventario.objects.get(id=inv_a.id).id_sucursal_id == suc_a.id
-
-    def test_detail_sin_sucursal_400(self):
-        adm_sin = UserFactory()
-        Perfil.objects.create(usuario=adm_sin, rol="admin")
-        c = _auth(adm_sin)
-        _, inv_a, _, _, _ = _ctx()
-        assert c.get(f"/api/inventarios/{inv_a.id}/").status_code == 400
-        assert (
-            c.put(f"/api/inventarios/{inv_a.id}/", {"descripcion": "X"}, format="json").status_code
-            == 400
-        )
-        assert c.delete(f"/api/inventarios/{inv_a.id}/").status_code == 400
-
-    def test_detail_404(self, api_client, staff_user):
-        api_client.force_authenticate(user=staff_user)
-        assert api_client.get("/api/inventarios/999999/").status_code == 404
-        assert (
-            api_client.put("/api/inventarios/999999/", {"descripcion": "X"}, format="json").status_code
-            == 404
-        )
-        assert api_client.delete("/api/inventarios/999999/").status_code == 404
-
-    def test_delete_propio_200(self):
-        _, inv_a, _, _, u = _ctx()
-        c = _auth(u)
-        # admin sí puede borrar inventarios de su sucursal...
-        assert c.delete(f"/api/inventarios/{inv_a.id}/").status_code == 200
-        assert not Inventario.objects.filter(id=inv_a.id).exists()
-        # ...pero encargado no
-        suc_e = SucursalFactory()
-        enc = _encargado(suc_e)
-        inv_b = InventarioFactory(id_sucursal=suc_e)
-        assert _auth(enc).delete(f"/api/inventarios/{inv_b.id}/").status_code == 403
+        assert api_client.get("/api/stock/").status_code == 400
 
 
 @pytest.mark.django_db
 class TestDetalleScoping:
     def _detalle_propio(self, auth_client, perfil):
-        inv = InventarioFactory(id_sucursal=perfil.id_sucursal)
+        suc = perfil.id_sucursal
         prod = ProductoFactory()
         r = auth_client.post(
             "/api/detalles-inventario/",
             {
                 "id_producto": prod.id,
-                "id_inventario": inv.id,
+                "id_sucursal": suc.id,
                 "cantidad": 3,
                 "tipo_movimiento": "ENTRADA",
                 "razon": "Compra",
@@ -239,20 +116,20 @@ class TestDetalleScoping:
             format="json",
         )
         assert r.status_code == 201, r.content
-        return r.data["id"], inv
+        return r.data["id"], suc
 
     def _encargado_con_perfil(self, auth_client, perfil):
         perfil.rol = "encargado"
         perfil.save(update_fields=["rol"])
 
     def test_post_otra_sucursal_403(self, auth_client):
-        inv = InventarioFactory()
+        suc = SucursalFactory()
         prod = ProductoFactory()
         r = auth_client.post(
             "/api/detalles-inventario/",
             {
                 "id_producto": prod.id,
-                "id_inventario": inv.id,
+                "id_sucursal": suc.id,
                 "cantidad": 1,
                 "tipo_movimiento": "ENTRADA",
                 "razon": "Compra",
@@ -269,7 +146,7 @@ class TestDetalleScoping:
             "/api/detalles-inventario/",
             {
                 "id_producto": prod.id,
-                "id_inventario": "abc",
+                "id_sucursal": "abc",
                 "cantidad": 1,
                 "tipo_movimiento": "ENTRADA",
                 "razon": "Compra",
@@ -285,15 +162,15 @@ class TestDetalleScoping:
         assert r.status_code == 200
         assert did in [d["id"] for d in r.data]
         # detalle de otra sucursal vía servicio directo (bypass) para el 403
-        from inventario.services.detalle_inventario_service import (
-            DetalleInventarioService,
+        from inventario.services.movimiento_inventario_service import (
+            MovimientoInventarioService,
         )
 
         prod = ProductoFactory()
-        otro = DetalleInventarioService().create(
+        otro = MovimientoInventarioService().create(
             {
                 "id_producto": prod.id,
-                "id_inventario": InventarioFactory().id,
+                "id_sucursal": SucursalFactory().id,
                 "cantidad": 1,
                 "tipo_movimiento": "ENTRADA",
                 "razon": "Compra",
@@ -305,23 +182,21 @@ class TestDetalleScoping:
         c_staff.force_authenticate(user=staff_user)
         assert c_staff.get(f"/api/detalles-inventario/{did}/").status_code == 200
 
-    def test_put_ignora_cambio_inventario(self, auth_client, perfil):
+    def test_put_ignora_cambio_sucursal(self, auth_client, perfil):
         self._encargado_con_perfil(auth_client, perfil)
-        did, inv = self._detalle_propio(auth_client, perfil)
-        otro = InventarioFactory()
+        did, suc = self._detalle_propio(auth_client, perfil)
+        otro = SucursalFactory()
         r = auth_client.put(
             f"/api/detalles-inventario/{did}/",
-            {"cantidad": 5, "id_inventario": otro.id},
+            {"cantidad": 5, "id_sucursal": otro.id},
             format="json",
         )
         assert r.status_code == 200
-        from inventario.models import DetalleInventario
-
-        assert DetalleInventario.objects.get(id=did).id_inventario_id == inv.id
+        assert MovimientoInventario.objects.get(id=did).id_sucursal_id == suc.id
 
     def test_staff_y_errores_varios(self, api_client, staff_user, auth_client, perfil):
         self._encargado_con_perfil(auth_client, perfil)
-        inv = InventarioFactory(id_sucursal=perfil.id_sucursal)
+        suc = perfil.id_sucursal
         prod = ProductoFactory()
         c_staff = APIClient()
         c_staff.force_authenticate(user=staff_user)
@@ -330,7 +205,7 @@ class TestDetalleScoping:
         assert (
             auth_client.post(
                 "/api/detalles-inventario/",
-                {"id_producto": prod.id, "id_inventario": inv.id},
+                {"id_producto": prod.id, "id_sucursal": suc.id},
                 format="json",
             ).status_code
             == 400
@@ -341,7 +216,7 @@ class TestDetalleScoping:
             [
                 {
                     "id_producto": prod.id,
-                    "id_inventario": inv.id,
+                    "id_sucursal": suc.id,
                     "cantidad": 1,
                     "tipo_movimiento": "ENTRADA",
                     "razon": "Compra",
@@ -355,7 +230,7 @@ class TestDetalleScoping:
             c_staff.post(
                 "/api/detalles-inventario/bulk/",
                 {
-                    "id_inventario": inv.id,
+                    "id_sucursal": suc.id,
                     "tipo_movimiento": "ENTRADA",
                     "items": [{"id_producto": prod.id, "cantidad": 1}],
                 },
@@ -366,13 +241,13 @@ class TestDetalleScoping:
 
     def test_sin_sucursal_y_errores_put_delete(self, auth_client, perfil):
         self._encargado_con_perfil(auth_client, perfil)
-        inv = InventarioFactory(id_sucursal=perfil.id_sucursal)
+        suc = perfil.id_sucursal
         prod = ProductoFactory()
         r = auth_client.post(
             "/api/detalles-inventario/",
             {
                 "id_producto": prod.id,
-                "id_inventario": inv.id,
+                "id_sucursal": suc.id,
                 "cantidad": 1,
                 "tipo_movimiento": "ENTRADA",
                 "razon": "Compra",
@@ -413,13 +288,13 @@ class TestDetalleScoping:
 
     def test_bulk_cross_403_y_basura_400(self, auth_client, perfil):
         self._encargado_con_perfil(auth_client, perfil)
-        inv = InventarioFactory(id_sucursal=perfil.id_sucursal)
-        otra = InventarioFactory()
+        suc = perfil.id_sucursal
+        otra = SucursalFactory()
         p1, p2 = ProductoFactory(), ProductoFactory()
         r = auth_client.post(
             "/api/detalles-inventario/bulk/",
             {
-                "id_inventario": inv.id,
+                "id_sucursal": suc.id,
                 "tipo_movimiento": "ENTRADA",
                 "items": [{"id_producto": p1.id, "cantidad": 1}],
             },
@@ -429,16 +304,16 @@ class TestDetalleScoping:
         r2 = auth_client.post(
             "/api/detalles-inventario/bulk/",
             {
-                "id_inventario": inv.id,
+                "id_sucursal": suc.id,
                 "tipo_movimiento": "ENTRADA",
-                "items": [{"id_producto": p2.id, "cantidad": 1, "id_inventario": otra.id}],
+                "items": [{"id_producto": p2.id, "cantidad": 1, "id_sucursal": otra.id}],
             },
             format="json",
         )
         assert r2.status_code == 403
         r3 = auth_client.post(
             "/api/detalles-inventario/bulk/",
-            {"id_inventario": "abc", "items": [{"id_producto": p2.id, "cantidad": 1}]},
+            {"id_sucursal": "abc", "items": [{"id_producto": p2.id, "cantidad": 1}]},
             format="json",
         )
         assert r3.status_code == 400

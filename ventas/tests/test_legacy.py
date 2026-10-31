@@ -5,8 +5,8 @@ from producto.models import Producto, Tipo, Proveedor
 from ventas.models import Venta, MetodoPago, DetalleVenta
 from ventas.services.detalle_venta_service import DetalleVentaService
 from ventas.services.venta_service import VentaService
-from inventario.models import Inventario, MovimientoInventario
-from inventario.services.detalle_inventario_service import DetalleInventarioService
+from inventario.models import MovimientoInventario
+from inventario.services.movimiento_inventario_service import MovimientoInventarioService
 from sucursales.models import Sucursal
 
 
@@ -14,9 +14,7 @@ class DetalleVentaServiceTestCase(TestCase):
 
     def setUp(self):
         self.sucursal = Sucursal.objects.create(ubicacion="Centro CDMX")
-        self.inventario = Inventario.objects.create(
-            id_sucursal=self.sucursal, descripcion="Inventario general"
-        )
+        self.inventario = self.sucursal
         self.tipo = Tipo.objects.create(nombre="Filtro")
         self.proveedor = Proveedor.objects.create(
             nombre="Proveedor A", telefono="123", correo="a@a.com", direccion="Calle 1"
@@ -36,18 +34,14 @@ class DetalleVentaServiceTestCase(TestCase):
         self.venta = Venta.objects.create(
             id_usuario=self.usuario,
             id_metodo_pago=self.metodo,
-            id_inventario=self.inventario,
+            id_sucursal=self.sucursal,
             total="150.00",
         )
-        self.entrada = MovimientoInventario.objects.create(
-            tipo="ENTRADA", cantidad=1, razon="Compra"
-        )
-        self.inv_service = DetalleInventarioService()
+        self.inv_service = MovimientoInventarioService()
         self.inv_service.create({
             "id_producto": self.producto.id,
-            "id_inventario": self.inventario.id,
+            "id_sucursal": self.sucursal.id,
             "id_proveedor": self.proveedor.id,
-            "id_movimiento": self.entrada.id,
             "cantidad": 10,
         })
         self.service = DetalleVentaService()
@@ -59,7 +53,7 @@ class DetalleVentaServiceTestCase(TestCase):
             "cantidad": 2,
         })
 
-        self.assertEqual(self.inv_service.get_stock(self.producto.id, self.inventario.id), 8)
+        self.assertEqual(self.inv_service.get_stock(self.producto.id, self.sucursal.id), 8)
         self.assertEqual(DetalleVenta.objects.count(), 1)
         self.assertEqual(MovimientoInventario.objects.filter(tipo="SALIDA").count(), 1)
 
@@ -71,7 +65,7 @@ class DetalleVentaServiceTestCase(TestCase):
                 "cantidad": 100,
             })
 
-        self.assertEqual(self.inv_service.get_stock(self.producto.id, self.inventario.id), 10)
+        self.assertEqual(self.inv_service.get_stock(self.producto.id, self.sucursal.id), 10)
         self.assertEqual(DetalleVenta.objects.count(), 0)
         self.assertEqual(MovimientoInventario.objects.filter(tipo="SALIDA").count(), 0)
 
@@ -140,7 +134,7 @@ class DetalleVentaServiceTestCase(TestCase):
 
         self.service.delete(detalle_id)
 
-        self.assertEqual(self.inv_service.get_stock(self.producto.id, self.inventario.id), 10)
+        self.assertEqual(self.inv_service.get_stock(self.producto.id, self.sucursal.id), 10)
         self.assertEqual(MovimientoInventario.objects.filter(tipo="SALIDA").count(), 0)
 
     def test_update_detalle_ajusta_stock_al_cambiar_producto(self):
@@ -156,9 +150,8 @@ class DetalleVentaServiceTestCase(TestCase):
         )
         self.inv_service.create({
             "id_producto": self.producto2.id,
-            "id_inventario": self.inventario.id,
+            "id_sucursal": self.sucursal.id,
             "id_proveedor": self.proveedor.id,
-            "id_movimiento": self.entrada.id,
             "cantidad": 5,
         })
         detalle_id = self.service.create({
@@ -169,8 +162,8 @@ class DetalleVentaServiceTestCase(TestCase):
 
         self.service.update(detalle_id, {"id_producto": self.producto2.id})
 
-        self.assertEqual(self.inv_service.get_stock(self.producto.id, self.inventario.id), 10)
-        self.assertEqual(self.inv_service.get_stock(self.producto2.id, self.inventario.id), 3)
+        self.assertEqual(self.inv_service.get_stock(self.producto.id, self.sucursal.id), 10)
+        self.assertEqual(self.inv_service.get_stock(self.producto2.id, self.sucursal.id), 3)
 
     def test_create_calcula_subtotal_desde_precio_venta(self):
         resultado = self.service.create({
@@ -218,9 +211,8 @@ class DetalleVentaServiceTestCase(TestCase):
         )
         self.inv_service.create({
             "id_producto": self.producto2.id,
-            "id_inventario": self.inventario.id,
+            "id_sucursal": self.sucursal.id,
             "id_proveedor": self.proveedor.id,
-            "id_movimiento": self.entrada.id,
             "cantidad": 5,
         })
         detalle_id = self.service.create({
@@ -247,9 +239,8 @@ class DetalleVentaServiceTestCase(TestCase):
         )
         self.inv_service.create({
             "id_producto": self.producto_decimal.id,
-            "id_inventario": self.inventario.id,
+            "id_sucursal": self.sucursal.id,
             "id_proveedor": self.proveedor.id,
-            "id_movimiento": self.entrada.id,
             "cantidad": 10,
         })
         resultado = self.service.create({
@@ -266,45 +257,43 @@ class VentaServiceTestCase(TestCase):
 
     def setUp(self):
         self.sucursal = Sucursal.objects.create(ubicacion="Centro CDMX")
-        self.inventario = Inventario.objects.create(
-            id_sucursal=self.sucursal, descripcion="Inventario general"
-        )
+        self.inventario = self.sucursal
         self.usuario = User.objects.create_user(username="vendedor", password="pass12345")
         self.metodo = MetodoPago.objects.create(tipo="Efectivo", descripcion="Efectivo")
         self.service = VentaService()
 
     def test_create_requiere_id_usuario(self):
         with self.assertRaises(ValueError):
-            self.service.create({"id_metodo_pago": self.metodo.id, "id_inventario": self.inventario.id})
+            self.service.create({"id_metodo_pago": self.metodo.id, "id_sucursal": self.sucursal.id})
 
     def test_create_requiere_id_metodo_pago(self):
         with self.assertRaises(ValueError):
-            self.service.create({"id_usuario": self.usuario.id, "id_inventario": self.inventario.id})
+            self.service.create({"id_usuario": self.usuario.id, "id_sucursal": self.sucursal.id})
 
-    def test_create_requiere_id_inventario(self):
+    def test_create_requiere_id_sucursal(self):
         with self.assertRaises(ValueError):
             self.service.create({"id_usuario": self.usuario.id, "id_metodo_pago": self.metodo.id})
 
     def test_usuario_inexistente_lanza_value_error(self):
         with self.assertRaises(ValueError):
-            self.service.create({"id_usuario": 9999, "id_metodo_pago": self.metodo.id, "id_inventario": self.inventario.id})
+            self.service.create({"id_usuario": 9999, "id_metodo_pago": self.metodo.id, "id_sucursal": self.sucursal.id})
 
     def test_metodo_inexistente_lanza_value_error(self):
         with self.assertRaises(ValueError):
-            self.service.create({"id_usuario": self.usuario.id, "id_metodo_pago": 9999, "id_inventario": self.inventario.id})
+            self.service.create({"id_usuario": self.usuario.id, "id_metodo_pago": 9999, "id_sucursal": self.sucursal.id})
 
-    def test_inventario_inexistente_lanza_value_error(self):
+    def test_sucursal_inexistente_lanza_value_error(self):
         with self.assertRaises(ValueError):
-            self.service.create({"id_usuario": self.usuario.id, "id_metodo_pago": self.metodo.id, "id_inventario": 9999})
+            self.service.create({"id_usuario": self.usuario.id, "id_metodo_pago": self.metodo.id, "id_sucursal": 9999})
 
     def test_create_exitoso(self):
         resultado = self.service.create({
             "id_usuario": self.usuario.id,
             "id_metodo_pago": self.metodo.id,
-            "id_inventario": self.inventario.id,
+            "id_sucursal": self.sucursal.id,
         })
 
         self.assertIsNotNone(resultado["id"])
         self.assertEqual(str(resultado["total"]), "0")
-        self.assertEqual(resultado["id_sucursal"], self.inventario.id_sucursal_id)
+        self.assertEqual(resultado["id_sucursal"], self.sucursal.id)
         self.assertNotIn("id_inventario", resultado)

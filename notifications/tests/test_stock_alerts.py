@@ -4,12 +4,11 @@ import threading
 
 import pytest
 
-from inventario.services.detalle_inventario_service import DetalleInventarioService
+from inventario.services.movimiento_inventario_service import MovimientoInventarioService
 from notifications.models import Notification
 from notifications.services import stock_alerts
 from notifications.services.stock_alerts import evaluar_stock, programar_evaluacion
 from tests.factories import (
-    InventarioFactory,
     ProductoFactory,
     SucursalFactory,
     UserFactory,
@@ -20,10 +19,10 @@ UMBRAL = 10
 
 
 def _entrada(prod, inv, qty, razon="Compra"):
-    return DetalleInventarioService().create(
+    return MovimientoInventarioService().create(
         {
             "id_producto": prod.id,
-            "id_inventario": inv.id,
+            "id_sucursal": inv.id,
             "cantidad": qty,
             "tipo_movimiento": "ENTRADA",
             "razon": razon,
@@ -34,7 +33,7 @@ def _entrada(prod, inv, qty, razon="Compra"):
 def _ctx_con_usuarios(settings):
     settings.NOTIFICATIONS_LOW_STOCK_THRESHOLD = UMBRAL
     suc = SucursalFactory(nombre_sucursal="Matriz")
-    inv = InventarioFactory(id_sucursal=suc)
+    inv = suc
     prod = ProductoFactory()
     u1 = UserFactory()
     u2 = UserFactory()
@@ -93,10 +92,10 @@ class TestCiclo:
         evaluar_stock(prod.id, inv.id)
         assert _activas(prod, suc, "warning").count() == 2
         # Venta simulada: SALIDA de 5 deja stock 0.
-        DetalleInventarioService().create(
+        MovimientoInventarioService().create(
             {
                 "id_producto": prod.id,
-                "id_inventario": inv.id,
+                "id_sucursal": inv.id,
                 "cantidad": 5,
                 "tipo_movimiento": "SALIDA",
                 "razon": "Venta",
@@ -137,10 +136,10 @@ class TestCiclo:
         _entrada(prod, inv, 20)
         evaluar_stock(prod.id, inv.id)
         _entrada(prod, inv, 1)
-        DetalleInventarioService().create(
+        MovimientoInventarioService().create(
             {
                 "id_producto": prod.id,
-                "id_inventario": inv.id,
+                "id_sucursal": inv.id,
                 "cantidad": 21,
                 "tipo_movimiento": "SALIDA",
                 "razon": "Venta",
@@ -182,7 +181,7 @@ class TestDestinatarios:
     def test_sin_usuarios_no_crea(self, settings):
         settings.NOTIFICATIONS_LOW_STOCK_THRESHOLD = UMBRAL
         suc = SucursalFactory()
-        inv = InventarioFactory(id_sucursal=suc)
+        inv = suc
         prod = ProductoFactory()
         res = evaluar_stock(prod.id, inv.id)
         assert res["creadas"] == 0
@@ -191,7 +190,7 @@ class TestDestinatarios:
     def test_nombre_sucursal_usa_ubicacion_si_no_hay_nombre(self, settings):
         settings.NOTIFICATIONS_LOW_STOCK_THRESHOLD = UMBRAL
         suc = SucursalFactory(nombre_sucursal="", ubicacion="Norte 123")
-        inv = InventarioFactory(id_sucursal=suc)
+        inv = suc
         prod = ProductoFactory()
         u = UserFactory()
         Perfil.objects.create(usuario=u, id_sucursal=suc)
@@ -202,7 +201,7 @@ class TestDestinatarios:
     def test_sucursal_sin_nombre_usa_ubicacion_en_mensaje(self, settings):
         settings.NOTIFICATIONS_LOW_STOCK_THRESHOLD = UMBRAL
         suc = SucursalFactory(nombre_sucursal="Sur")
-        inv = InventarioFactory(id_sucursal=suc)
+        inv = suc
         prod = ProductoFactory(nombre="Bujía X")
         u = UserFactory()
         Perfil.objects.create(usuario=u, id_sucursal=suc)
@@ -237,7 +236,7 @@ class TestConcurrencia:
     def test_evaluaciones_simultaneas_no_duplican(self, settings):
         settings.NOTIFICATIONS_LOW_STOCK_THRESHOLD = UMBRAL
         suc = SucursalFactory()
-        inv = InventarioFactory(id_sucursal=suc)
+        inv = suc
         prod = ProductoFactory()
         u = UserFactory()
         Perfil.objects.create(usuario=u, id_sucursal=suc)

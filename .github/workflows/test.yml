@@ -90,3 +90,39 @@ jobs:
           name: coverage-xml
           path: coverage.xml
           retention-days: 7
+
+  merge-to-develop:
+    name: Merge test -> Develop
+    needs: [lint, test]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    concurrency:
+      group: merge-develop
+      cancel-in-progress: false
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Merge into Develop
+        env:
+          MERGE_SHA: ${{ github.sha }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B Develop origin/Develop
+          for intento in 1 2 3; do
+            git merge --no-ff "$MERGE_SHA" -m "chore(ci): merge test en Develop tras pruebas verdes" \
+              || { echo "Conflicto al mergear test en Develop" >&2; exit 1; }
+            if git push origin Develop; then exit 0; fi
+            echo "Push rechazado (intento $intento); reintentando sobre origin/Develop"
+            git fetch origin Develop
+            git reset --hard origin/Develop
+          done
+          echo "No se pudo mergear test en Develop" >&2
+          exit 1

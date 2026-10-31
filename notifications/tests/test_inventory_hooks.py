@@ -5,11 +5,10 @@ Usa transaction=True para que los callbacks on_commit se ejecuten de verdad.
 
 import pytest
 
-from inventario.services.detalle_inventario_service import DetalleInventarioService
+from inventario.services.movimiento_inventario_service import MovimientoInventarioService
 from notifications.models import Notification
 from notifications.services import stock_alerts
 from tests.factories import (
-    InventarioFactory,
     MetodoPagoFactory,
     ProductoFactory,
     SucursalFactory,
@@ -22,7 +21,7 @@ from ventas.services.venta_service import VentaService
 
 def _ctx():
     suc = SucursalFactory()
-    inv = InventarioFactory(id_sucursal=suc)
+    inv = suc
     prod = ProductoFactory()
     user = UserFactory()
     Perfil.objects.create(usuario=user, id_sucursal=suc)
@@ -30,10 +29,10 @@ def _ctx():
 
 
 def _entrada(prod, inv, qty):
-    return DetalleInventarioService().create(
+    return MovimientoInventarioService().create(
         {
             "id_producto": prod.id,
-            "id_inventario": inv.id,
+            "id_sucursal": inv.id,
             "cantidad": qty,
             "tipo_movimiento": "ENTRADA",
             "razon": "Compra",
@@ -61,7 +60,7 @@ class TestHooksInventario:
         suc, inv, prod, user = _ctx()
         det = _entrada(prod, inv, 50)
         assert Notification.objects.count() == 0
-        DetalleInventarioService().update(det["id"], {"cantidad": 2})
+        MovimientoInventarioService().update(det["id"], {"cantidad": 2})
         assert (
             Notification.objects.filter(
                 destinatario_id=user.id, tipo="warning", resuelta_en__isnull=True
@@ -71,9 +70,9 @@ class TestHooksInventario:
 
     def test_bulk_create_reevalua(self):
         suc, inv, prod, user = _ctx()
-        DetalleInventarioService().bulk_create(
+        MovimientoInventarioService().bulk_create(
             {
-                "id_inventario": inv.id,
+                "id_sucursal": inv.id,
                 "tipo_movimiento": "ENTRADA",
                 "razon": "Compra",
                 "items": [{"id_producto": prod.id, "cantidad": 4}],
@@ -91,7 +90,7 @@ class TestHooksInventario:
         _entrada(prod, inv, 10)
         mp = MetodoPagoFactory()
         v = VentaService().create(
-            {"id_usuario": user.id, "id_inventario": inv.id, "id_metodo_pago": mp.id}
+            {"id_usuario": user.id, "id_sucursal": inv.id, "id_metodo_pago": mp.id}
         )
         DetalleVentaService().create(
             {"id_producto": prod.id, "id_venta": v["id"], "cantidad": 10}, user=user
@@ -119,5 +118,5 @@ class TestHooksInventario:
         monkeypatch.setattr(stock_alerts, "evaluar_stock", _boom)
         det = _entrada(prod, inv, 7)
         assert det["cantidad"] == 7
-        assert DetalleInventarioService().get_stock(prod.id, inv.id) == 7
+        assert MovimientoInventarioService().get_stock(prod.id, inv.id) == 7
         assert Notification.objects.count() == 0

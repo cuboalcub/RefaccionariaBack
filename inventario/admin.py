@@ -1,7 +1,6 @@
 from django.contrib import admin
-from inventario.models import Inventario, MovimientoInventario, DetalleInventario, PrecioSucursal
+from inventario.models import Stock, MovimientoInventario, PrecioSucursal
 
-admin.site.register(Inventario)
+admin.site.register(Stock)
 admin.site.register(MovimientoInventario)
-admin.site.register(DetalleInventario)
 admin.site.register(PrecioSucursal)

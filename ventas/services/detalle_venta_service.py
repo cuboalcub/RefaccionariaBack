@@ -8,7 +8,7 @@ from ventas.repositories.detalle_venta_repository import DetalleVentaRepository
 from producto.models import Producto
 from producto.repositories.producto_repository import ProductoRepository
 from ventas.repositories.venta_repository import VentaRepository
-from inventario.services.detalle_inventario_service import DetalleInventarioService
+from inventario.services.movimiento_inventario_service import MovimientoInventarioService
 from inventario.services.precio_sucursal_service import PrecioSucursalService
 from repository.base_service import BaseService
 from repository.exceptions import NotFoundError
@@ -19,7 +19,7 @@ class DetalleVentaService(BaseService):
         super().__init__(model=DetalleVenta, repository=detalle_repo or DetalleVentaRepository())
         self.producto_repo = producto_repo or ProductoRepository()
         self.venta_repo = venta_repo or VentaRepository()
-        self.inventario_service = DetalleInventarioService()
+        self.movimiento_service = MovimientoInventarioService()
 
     def _to_dict(self, instance):
         return {
@@ -35,17 +35,7 @@ class DetalleVentaService(BaseService):
 
     def _precio_aplicable(self, producto, venta):
         """Resuelve precio por sucursal si existe, sino fallback a Producto.precio_venta."""
-        sucursal_id = None
-        if venta and venta.id_inventario_id:
-            # venta.id_inventario es Inventario, obtener sucursal
-            # evitar query extra si ya está prefetched
-            inv = venta.id_inventario
-            if hasattr(inv, 'id_sucursal_id'):
-                sucursal_id = inv.id_sucursal_id
-            else:
-                from inventario.models import Inventario
-                inv_obj = Inventario.objects.filter(id=venta.id_inventario_id).first()
-                sucursal_id = inv_obj.id_sucursal_id if inv_obj else None
+        sucursal_id = venta.id_sucursal_id if venta else None
         precio = PrecioSucursalService.resolver_precio_venta(producto, sucursal_id)
         return precio if precio is not None else producto.precio_venta
 
@@ -58,16 +48,14 @@ class DetalleVentaService(BaseService):
         return total
 
     def _sucursal_id_de_venta(self, venta):
-        try:
-            # venta.id_inventario puede ser instancia o id
-            inv = venta.id_inventario
-            if hasattr(inv, 'id_sucursal_id'):
-                return inv.id_sucursal_id
-            from inventario.models import Inventario
-            inv_obj = Inventario.objects.filter(id=venta.id_inventario_id).first()
-            return inv_obj.id_sucursal_id if inv_obj else None
-        except Exception:
-            return None
+        return getattr(venta, 'id_sucursal_id', None)
+
+    def _validar_venta_operable(self, venta):
+        """Las operaciones por detalle exigen venta completada y con sucursal."""
+        if getattr(venta, 'estado', None) == 'cancelada':
+            raise ValueError(f"La venta {venta.id} está cancelada y no admite cambios")
+        if getattr(venta, 'id_sucursal_id', None) is None:
+            raise ValueError("La venta no tiene sucursal asignada")
 
     def _sucursal_del_usuario(self, user):
         perfil = getattr(user, 'perfil', None)
@@ -90,22 +78,22 @@ class DetalleVentaService(BaseService):
             sucursal_venta_id = self._sucursal_id_de_venta(venta)
             if sucursal_venta_id is not None and user_sucursal_id != sucursal_venta_id:
                 raise ValueError(
-                    f"La venta pertenece al inventario {venta.id_inventario_id} (Sucursal {sucursal_venta_id}) y no puede ser operada por el usuario de la sucursal {user_sucursal_id}"
+                    f"La venta pertenece a la sucursal {sucursal_venta_id} y no puede ser operada por el usuario de la sucursal {user_sucursal_id}"
                 )
 
     def _validar_producto_en_inventario_sucursal(self, producto, venta, user=None):
-        """Valida que el producto tenga stock >0 en el inventario/sucursal de la venta
+        """Valida que el producto tenga stock >0 en la sucursal de la venta
         y que el usuario pertenezca a la misma sucursal (si tiene perfil)."""
         # Bloqueo cross-sucursal: si el usuario tiene perfil con sucursal, debe coincidir con la sucursal de la venta
         if user is not None:
             self._validar_cross_sucursal(user, venta)
 
-        # Validación producto en inventario/sucursal: stock >0
-        stock = self.inventario_service.get_stock(producto.id, venta.id_inventario_id)
+        # Validación producto en sucursal: stock >0
+        sucursal_id = self._sucursal_id_de_venta(venta)
+        stock = self.movimiento_service.get_stock(producto.id, sucursal_id)
         if stock == 0:
-            sucursal_id = self._sucursal_id_de_venta(venta)
             raise ValueError(
-                f"El producto '{producto.nombre}' no está disponible en el inventario {venta.id_inventario_id} (Sucursal {sucursal_id}) - stock 0"
+                f"El producto '{producto.nombre}' no está disponible en la sucursal {sucursal_id} - stock 0"
             )
 
     @staticmethod
@@ -114,6 +102,8 @@ class DetalleVentaService(BaseService):
             raise ValueError("La cantidad debe ser un entero mayor a cero")
 
     def create(self, data, user=None):
+        from inventario.models import Stock as _Stock
+
         if "id_producto" not in data or "id_venta" not in data or "cantidad" not in data:
             raise ValueError("Faltan campos obligatorios: id_producto, id_venta, cantidad")
         self._validar_cantidad(data["cantidad"])
@@ -121,15 +111,22 @@ class DetalleVentaService(BaseService):
             venta = self.venta_repo.get_by_id(data["id_venta"])
             if not venta:
                 raise NotFoundError(f"Venta con id {data['id_venta']} no encontrado")
-            if not venta.id_inventario:
-                raise ValueError("La venta no tiene inventario asignado")
+            self._validar_venta_operable(venta)
             try:
                 producto = Producto.objects.select_for_update().get(id=data["id_producto"])
             except (Producto.DoesNotExist, ValidationError, ValueError, TypeError):
                 raise NotFoundError(f"Producto con id {data['id_producto']} no encontrado")
+            # Serializa la fila de stock de la venta para que dos ajustes
+            # concurrentes no lean el mismo stock a la vez.
+            list(
+                _Stock.objects.select_for_update().filter(
+                    id_producto_id=producto.id,
+                    id_sucursal_id=venta.id_sucursal_id,
+                )
+            )
 
             self._validar_producto_en_inventario_sucursal(producto, venta, user=user)
-            self.inventario_service._validar_salida(producto.id, venta.id_inventario_id, data["cantidad"])
+            self.movimiento_service._validar_salida(producto.id, venta.id_sucursal_id, data["cantidad"])
 
             data["id_venta"] = venta
             data["id_producto"] = producto
@@ -139,14 +136,14 @@ class DetalleVentaService(BaseService):
             resultado = super().create(data)
 
             detalle = self.repository.get_by_id(resultado["id"])
-            self.inventario_service.crear_salida_por_venta(
-                detalle, producto, venta.id_inventario, data["cantidad"]
+            self.movimiento_service.crear_salida_por_venta(
+                detalle, producto, venta.id_sucursal_id, data["cantidad"], user=user
             )
             self._recalcular_total(venta.id)
             return resultado
 
     def update(self, id, data, user=None):
-        from inventario.models import DetalleInventario as _DetalleInv
+        from inventario.models import Stock as _Stock
         from ventas.models import Venta as _Venta
 
         with transaction.atomic():
@@ -160,8 +157,9 @@ class DetalleVentaService(BaseService):
             except _Venta.DoesNotExist:
                 raise NotFoundError(f"Venta con id {detalle.id_venta_id} no encontrado")
             venta = self.venta_repo.get_by_id(detalle.id_venta_id)
-            if not venta or not venta.id_inventario:
-                raise ValueError("La venta no tiene inventario asignado")
+            if not venta:
+                raise NotFoundError(f"Venta con id {detalle.id_venta_id} no encontrado")
+            self._validar_venta_operable(venta)
 
             nueva_cantidad = data.get("cantidad", detalle.cantidad)
             self._validar_cantidad(nueva_cantidad)
@@ -171,21 +169,21 @@ class DetalleVentaService(BaseService):
             except Producto.DoesNotExist:
                 raise NotFoundError(f"Producto con id {nuevo_producto_id} no encontrado")
             list(
-                _DetalleInv.objects.select_for_update().filter(
+                _Stock.objects.select_for_update().filter(
                     id_producto_id=nuevo_producto_id,
-                    id_inventario_id=venta.id_inventario_id,
+                    id_sucursal_id=venta.id_sucursal_id,
                 )
             )
 
-            # Si cambia producto, validar que el nuevo producto esté en el inventario/sucursal
+            # Si cambia producto, validar que el nuevo producto esté en el stock de la sucursal
             if nuevo_producto_id != detalle.id_producto_id:
                 self._validar_producto_en_inventario_sucursal(nuevo_producto, venta, user=user)
 
-            self.inventario_service.ajustar_salida_por_venta(
+            self.movimiento_service.ajustar_salida_por_venta(
                 detalle,
                 nueva_cantidad,
                 producto=nuevo_producto,
-                inventario=venta.id_inventario,
+                sucursal_id=venta.id_sucursal_id,
             )
 
             data["id_producto"] = nuevo_producto
@@ -201,9 +199,12 @@ class DetalleVentaService(BaseService):
             detalle = self.repository.get_by_id(id)
             if not detalle:
                 raise NotFoundError(f"{self.model.__name__} con id {id} no encontrado")
+            venta = self.venta_repo.get_by_id(detalle.id_venta_id)
+            if venta:
+                self._validar_venta_operable(venta)
             venta_id = detalle.id_venta_id
 
-            self.inventario_service.revertir_salida_por_venta(detalle)
+            self.movimiento_service.revertir_salida_por_venta(detalle)
 
             super().delete(id, user)
             self._recalcular_total(venta_id)

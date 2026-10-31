@@ -10,7 +10,7 @@ class VentaTicketService:
             .select_related(
                 "id_usuario",
                 "id_metodo_pago",
-                "id_inventario__id_sucursal",
+                "id_sucursal",
             )
             .prefetch_related(
                 "detalleventa_set__id_producto"
@@ -58,9 +58,8 @@ class VentaTicketService:
                 else None
             ),
             "sucursal": (
-                str(venta_obj.id_inventario.id_sucursal)
-                if venta_obj.id_inventario
-                and venta_obj.id_inventario.id_sucursal
+                str(venta_obj.id_sucursal)
+                if venta_obj.id_sucursal
                 else None
             ),
             "productos": productos,
