@@ -387,10 +387,10 @@ class TestDetalleCrossSucursal:
 
     def test_producto_stock_0_mensaje(self):
         suc = SucursalFactory()
-        inv = suc
         prod = ProductoFactory()  # sin movimientos -> stock 0
         u = UserFactory()
         Perfil.objects.create(usuario=u, id_sucursal=suc)
+        inv = suc
         mp = MetodoPagoFactory()
         v = _legacy_venta(u, inv, mp)
         with pytest.raises(ValueError, match="stock 0"):
@@ -602,7 +602,6 @@ class TestReporteGenerar:
 
     def test_sin_metodo_y_detalles_vacios(self):
         suc = SucursalFactory()
-        inv = suc
         u = UserFactory()
         v = Venta.objects.create(
             id_usuario=u, id_metodo_pago=None, id_sucursal=suc, total=Decimal("0.00")
@@ -979,7 +978,7 @@ class TestRamasDefensivas:
 
     def test_venta_sin_sucursal_al_validar_stock(self):
         # venta sin sucursal -> error antes de medir stock
-        prod = ProductoFactory()  # sin stock
+        ProductoFactory()  # sin stock
         fake_venta = SimpleNamespace(id=1, id_sucursal_id=None)
         with pytest.raises(ValueError, match="no tiene sucursal asignada"):
             DetalleVentaService()._validar_venta_operable(fake_venta)

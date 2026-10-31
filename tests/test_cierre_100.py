@@ -1,14 +1,12 @@
 """Cierre 100%: paginación mi-sucursal, ramas de update/movimiento, FK None precio, Mini repo."""
 
 import pytest
-from decimal import Decimal
 
 from inventario.models import MovimientoInventario
 from inventario.services.movimiento_inventario_service import MovimientoInventarioService
 from inventario.services.precio_sucursal_service import PrecioSucursalService
 from producto.services.producto_service import ProductoService
 from tests.factories import (
-    MetodoPagoFactory,
     ProductoFactory,
     ProveedorFactory,
     SucursalFactory,

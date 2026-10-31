@@ -202,7 +202,7 @@ class TestCancelacionSuave:
         v = _venta(u, suc, mp)
         VentaService().update(v["id"], {"estado": "cancelada"})
         mp2 = MetodoPagoFactory(tipo="TARJETA", descripcion="Tarjeta")
-        res = VentaService().update(
+        VentaService().update(
             v["id"], {"estado": "cancelada", "id_metodo_pago": mp2.id}
         )
         assert Venta.objects.get(id=v["id"]).id_metodo_pago_id == mp2.id
