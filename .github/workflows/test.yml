@@ -99,6 +99,7 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: write
+      actions: write
     concurrency:
       group: merge-develop
       cancel-in-progress: false
@@ -126,3 +127,9 @@ jobs:
           done
           echo "No se pudo mergear test en Develop" >&2
           exit 1
+
+      - name: Deploy Develop
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: gh workflow run deploy.yml --ref Develop
