@@ -8,7 +8,6 @@ Tipos compatibles con el frontend (info/warning/error/success):
 from django.contrib.auth.models import User
 from django.db import models
 
-from inventario.models import Inventario
 from producto.models import Producto
 from sucursales.models import Sucursal
 
@@ -36,10 +35,6 @@ class Notification(models.Model):
     )
     ref_sucursal = models.ForeignKey(
         Sucursal, on_delete=models.SET_NULL, blank=True, null=True,
-        related_name="notifications",
-    )
-    ref_inventario = models.ForeignKey(
-        Inventario, on_delete=models.SET_NULL, blank=True, null=True,
         related_name="notifications",
     )
     stock = models.IntegerField(blank=True, null=True)

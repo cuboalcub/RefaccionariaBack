@@ -13,13 +13,12 @@ import pytest
 from decimal import Decimal
 from django.db.models.deletion import ProtectedError
 
-from inventario.models import DetalleInventario, MovimientoInventario
-from inventario.services.detalle_inventario_service import DetalleInventarioService
+from inventario.models import MovimientoInventario
+from inventario.services.movimiento_inventario_service import MovimientoInventarioService
 from ventas.models import DetalleVenta, Venta
 from ventas.services.detalle_venta_service import DetalleVentaService
 from ventas.services.venta_service import VentaService
 from tests.factories import (
-    InventarioFactory,
     MetodoPagoFactory,
     ProductoFactory,
     SucursalFactory,
@@ -30,12 +29,12 @@ from usuario.models import Perfil
 
 def _ctx(stock=10, precio=Decimal("100.00")):
     suc = SucursalFactory()
-    inv = InventarioFactory(id_sucursal=suc)
+    inv = suc
     prod = ProductoFactory(precio_venta=precio)
-    DetalleInventarioService().create(
+    MovimientoInventarioService().create(
         {
             "id_producto": prod.id,
-            "id_inventario": inv.id,
+            "id_sucursal": inv.id,
             "cantidad": stock,
             "tipo_movimiento": "ENTRADA",
             "razon": "Compra",
@@ -45,7 +44,7 @@ def _ctx(stock=10, precio=Decimal("100.00")):
     Perfil.objects.create(usuario=u, id_sucursal=suc, rol="encargado")
     mp = MetodoPagoFactory()
     v = VentaService().create(
-        {"id_usuario": u.id, "id_inventario": inv.id, "id_metodo_pago": mp.id}
+        {"id_usuario": u.id, "id_sucursal": inv.id, "id_metodo_pago": mp.id}
     )
     return suc, inv, prod, u, mp, v
 
@@ -63,7 +62,7 @@ class TestProtectAntiHuerfanos:
             det_obj.delete()
         # Nada se corrompió: detalle, salida y stock intactos
         assert DetalleVenta.objects.filter(id=det["id"]).exists()
-        assert DetalleInventario.objects.filter(id_detalle_venta_id=det["id"]).exists()
+        assert MovimientoInventario.objects.filter(id_detalle_venta_id=det["id"]).exists()
 
     def test_borrado_orm_directo_venta_bloqueado(self):
         _, _, prod, u, _, v = _ctx()
@@ -82,7 +81,7 @@ class TestProtectAntiHuerfanos:
             user=u,
         )
         VentaService().delete(v["id"])
-        assert DetalleInventarioService().get_stock(prod.id, inv.id) == 10
+        assert MovimientoInventarioService().get_stock(prod.id, inv.id) == 10
         assert (
             MovimientoInventario.objects.filter(
                 tipo=MovimientoInventario.TipoMovimiento.SALIDA
@@ -116,9 +115,9 @@ class TestContencionStock:
             {"id_producto": prod.id, "id_venta": v1["id"], "cantidad": 5},
             user=u,
         )
-        assert DetalleInventarioService().get_stock(prod.id, inv.id) == 0
+        assert MovimientoInventarioService().get_stock(prod.id, inv.id) == 0
         v2 = VentaService().create(
-            {"id_usuario": u.id, "id_inventario": inv.id, "id_metodo_pago": mp.id}
+            {"id_usuario": u.id, "id_sucursal": inv.id, "id_metodo_pago": mp.id}
         )
         with pytest.raises(ValueError, match="disponible|Stock"):
             DetalleVentaService().create(
@@ -128,12 +127,12 @@ class TestContencionStock:
         # Al liberar stock (5 -> 3), el competidor entra exacto
         d1 = DetalleVenta.objects.get(id_venta_id=v1["id"])
         DetalleVentaService().update(d1.id, {"cantidad": 3}, user=u)
-        assert DetalleInventarioService().get_stock(prod.id, inv.id) == 2
+        assert MovimientoInventarioService().get_stock(prod.id, inv.id) == 2
         DetalleVentaService().create(
             {"id_producto": prod.id, "id_venta": v2["id"], "cantidad": 2},
             user=u,
         )
-        assert DetalleInventarioService().get_stock(prod.id, inv.id) == 0
+        assert MovimientoInventarioService().get_stock(prod.id, inv.id) == 0
 
     def test_ajuste_mas_alla_del_stock_falla(self):
         _, inv, prod, u, _, v = _ctx(stock=5)
@@ -143,4 +142,4 @@ class TestContencionStock:
         )
         with pytest.raises(ValueError, match="insuficiente"):
             DetalleVentaService().update(det["id"], {"cantidad": 99}, user=u)
-        assert DetalleInventarioService().get_stock(prod.id, inv.id) == 3
+        assert MovimientoInventarioService().get_stock(prod.id, inv.id) == 3

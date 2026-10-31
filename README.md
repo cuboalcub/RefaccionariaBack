@@ -53,47 +53,33 @@ python manage.py runserver
 ## Contrato de API (importante para el frontend)
 
 ### Productos
-- `POST /api/productos/` **no** recibe `existencia` ni `id_movimientos`. El producto solo guarda datos (precio, costo, clave, etc.). El stock vive en `DetalleInventario`.
+- `POST /api/productos/` **no** recibe `existencia` ni `id_movimientos`. El producto solo guarda datos (precio, costo, clave, etc.). El stock vive en la tabla `Stock`.
 
-### Inventario (libro de movimientos)
-- El stock de un producto se calcula como `Σ ENTRADAS − Σ SALIDAS` de los `DetalleInventario` por inventario.
-- `POST /api/detalles-inventario/` recibe **dos formas**:
-  1. **Con movimiento existente** (requiere crear antes `POST /api/movimientos-inventario/`):
+### Inventario (stock + movimientos)
+- El stock por `(sucursal, producto)` vive en `Stock.cantidad` y se ajusta con cada movimiento. `MovimientoInventario` es el registro histórico: `tipo` (`ENTRADA`/`SALIDA`), `cantidad`, `id_producto`, `id_sucursal`, `id_usuario`, `id_proveedor` (solo entradas) y `id_detalle_venta` (en salidas por venta).
+- `GET /api/stock/?sucursal_id=1` — balance consolidado (`id`, `id_sucursal`, `id_producto`, `cantidad`). Staff puede filtrar por sucursal; no-staff siempre ve la propia (sin sucursal → 400).
+- `GET /api/inventarios/mi-sucursal/` devuelve `{"id_sucursal": 1, "detalles": [...]}` con el catálogo de la sucursal (producto + precio de sucursal + cantidad). Con `?page=1&page_size=20` responde paginado (`total`, `page`, `page_size`, `total_pages`, `id_sucursal`, `detalles`).
+- Los CRUD `GET/POST/PUT/DELETE /api/inventarios/` **se eliminaron**: el inventario ya no es una entidad por sucursal.
+- `POST /api/movimientos-inventario/` y `POST /api/detalles-inventario/` (alias) crean un movimiento y ajustan el stock en la misma transacción:
   ```json
   {
     "id_producto": 1,
-    "id_inventario": 1,
-    "id_movimiento": 1,
-    "id_proveedor": 1,
-    "cantidad": 5
-  }
-  ```
-  2. **Sin movimiento (auto-creación)** — `id_movimiento` es opcional; si no se envía, el backend crea automáticamente el `MovimientoInventario`:
-  ```json
-  {
-    "id_producto": 1,
-    "id_inventario": 1,
-    "cantidad": 7
-  }
-  ```
-  O con tipo/razón explícitos (por defecto `tipo_movimiento=ENTRADA`, `razon=Ajuste manual`):
-  ```json
-  {
-    "id_producto": 1,
-    "id_inventario": 1,
-    "cantidad": 3,
+    "id_sucursal": 1,
+    "cantidad": 5,
     "tipo_movimiento": "SALIDA",
     "razon": "Ajuste por merma",
-    "observaciones": "Productos dañados"
+    "observaciones": "Productos dañados",
+    "id_proveedor": 1
   }
   ```
-- `id_movimiento` es un `MovimientoInventario` de tipo `ENTRADA` (suma al stock) o `SALIDA` (resta; valida stock suficiente). Si no se envía, se auto-crea según `tipo_movimiento`.
-- `GET /api/inventarios/mi-sucursal/` devuelve el inventario de la sucursal del usuario autenticado, agrupado por producto con su stock actual.
+  `tipo_movimiento` (o `tipo`) por defecto `ENTRADA`; `razon` por defecto `Ajuste manual`. `SALIDA` valida stock suficiente. `id_movimiento` **ya no se acepta** → 400: cada movimiento lleva su propio producto/sucursal.
+- `POST /api/detalles-inventario/bulk/` genera **un movimiento por línea** (se eliminó el movimiento compartido). Acepta lista plana, `{"items": [...]}`, o `{"detalles": [...]}` con cabecera común (`id_sucursal`, `id_proveedor`, `tipo_movimiento`, `razon`, `observaciones`).
+- `PUT` reajusta el stock por diferencia y permite mover producto/sucursal; `DELETE` revierte el delta.
 
 ### Ventas
-- `POST /api/ventas/` **ignora** `total`, `id_usuario` e `id_inventario` enviados por el cliente. `id_usuario` y sucursal se toman automáticamente del JWT/perfil (`Authorization: Bearer <access_token>` → `Perfil.sucursal → Inventario`). Solo recibe `id_metodo_pago` (más `detalles` opcional para creación atómica). El total se calcula automáticamente sumando los `subtotal` de sus detalles. Staff/superuser puede enviar `sucursal_id` como override explícito. Las respuestas exponen `id_sucursal` (ya no `id_inventario`) y `GET /api/ventas/` filtra por `sucursal_id` (staff) en vez de `id_inventario`.
+- `POST /api/ventas/` **ignora** `total`, `id_usuario` e `id_inventario` enviados por el cliente. `id_usuario` y sucursal se toman automáticamente del JWT/perfil (`Authorization: Bearer <access_token>` → `Perfil.sucursal`). Solo recibe `id_metodo_pago` (más `detalles` opcional para creación atómica). El total se calcula automáticamente sumando los `subtotal` de sus detalles. Staff/superuser puede enviar `sucursal_id` como override explícito. Sin JWT se exige `id_sucursal`; `id_inventario` ya no se mapea. Las respuestas exponen `id_sucursal` y `GET /api/ventas/` filtra por `sucursal_id`.
 - `POST /api/detalleventa/` (crear) está **deprecado** → `410 Gone`: crear siempre con `POST /api/ventas/` + `detalles` (atómico). `GET/PUT/DELETE` por unidad siguen vigentes; al ajustar/borrar el detalle, la salida se revierte (con locks de venta + stock).
-- `DetalleInventario.id_detalle_venta` es `PROTECT`: el borrado directo por ORM/shell de detalles con salida vinculada falla en vez de dejar huérfanos; borrar siempre vía servicios.
+- Cada detalle de venta genera un `MovimientoInventario` de tipo `SALIDA` con `id_detalle_venta`, `id_usuario` (vendedor) y `razon="Venta"`. Su FK es `PROTECT`: el borrado directo por ORM/shell falla en vez de dejar huérfanos; borrar siempre vía servicios.
 - El `subtotal` de cada detalle se calcula **en el servidor** como `precio_venta * cantidad` del producto (se ignora cualquier `subtotal` enviado por el cliente).
 
 ### Autenticación
@@ -103,7 +89,7 @@ python manage.py runserver
 
 ### Roles y sucursales
 - `Perfil.rol`: `cajero` (default) / `encargado` / `admin`. `is_staff` implica todo (`is_superuser` la implica). Sin perfil el rol es `cajero`.
-- Matriz: cajero vende y lee; encargado además anula ventas, escribe inventario/bulk y precios, ve reporte y gestiona usuarios de su sucursal (crear cajeros, modificar datos/password/activo; no borra ni cambia roles); admin además gestiona inventarios y sucursales. El login expone `rol`; el registro y `PUT /api/perfil/` lo ignoran (sin auto-escalación; el rol se asigna por shell/admin).
+- Matriz: cajero vende y lee; encargado además anula ventas, escribe movimientos/bulk y precios, ve reporte y gestiona usuarios de su sucursal (crear cajeros, modificar datos/password/activo; no borra ni cambia roles); admin además gestiona sucursales. El login expone `rol`; el registro y `PUT /api/perfil/` lo ignoran (sin auto-escalación; el rol se asigna por shell/admin).
 - Todo está acotado por sucursal (JWT/perfil, staff con override): otra sucursal → 403, sin sucursal → 400. Sin permiso de rol → 403. Movimientos y lectura de catálogos siguen globales.
 ```
 RefaccionariaBack

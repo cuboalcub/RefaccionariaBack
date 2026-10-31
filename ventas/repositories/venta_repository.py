@@ -10,7 +10,7 @@ class VentaRepository(BaseRepository):
 
         return (
             self.model_class.objects
-            .filter(fecha__range=(fecha_inicio, fecha_fin))
+            .filter(fecha__range=(fecha_inicio, fecha_fin), estado='completada')
             .select_related('id_usuario', 'id_metodo_pago')
             .prefetch_related('detalleventa_set__id_producto')
             .order_by('fecha')
@@ -18,5 +18,5 @@ class VentaRepository(BaseRepository):
 
     def get_total_ventas_por_rango(self, fecha_inicio, fecha_fin):
         return self.model_class.objects.filter(
-            fecha__range=(fecha_inicio, fecha_fin)
+            fecha__range=(fecha_inicio, fecha_fin), estado='completada'
         ).aggregate(total_general=Sum('total'))['total_general'] or 0

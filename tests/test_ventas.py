@@ -1,30 +1,28 @@
-"""Tests ventas: VentaService (JWT/inventario) + DetalleVenta (subtotal/stock/total) + API."""
+"""Tests ventas: VentaService (JWT/sucursal) + DetalleVenta (subtotal/stock/total) + API."""
 
 import pytest
 from decimal import Decimal
-from django.contrib.auth.models import User
 
-from inventario.models import Inventario
-from inventario.services.detalle_inventario_service import DetalleInventarioService
+from inventario.repositories.stock_repository import StockRepository
 from inventario.services.precio_sucursal_service import PrecioSucursalService
 from ventas.models import Venta
 from ventas.services.detalle_venta_service import DetalleVentaService
 from ventas.services.venta_service import VentaService
 from tests.factories import (
-    InventarioFactory,
     MetodoPagoFactory,
     ProductoFactory,
+    StockFactory,
     SucursalFactory,
     UserFactory,
 )
 from usuario.models import Perfil
 
 
-def _venta_base(user, inventario, metodo):
+def _venta_base(user, sucursal, metodo):
     return VentaService().create(
         {
             "id_usuario": user.id,
-            "id_inventario": inventario.id,
+            "id_sucursal": sucursal.id,
             "id_metodo_pago": metodo.id,
         }
     )
@@ -32,19 +30,18 @@ def _venta_base(user, inventario, metodo):
 
 @pytest.mark.django_db
 class TestVentaService:
-    def test_create_legacy(self):
+    def test_create_con_sucursal(self):
         u = UserFactory()
-        inv = InventarioFactory()
+        suc = SucursalFactory()
         mp = MetodoPagoFactory()
-        res = _venta_base(u, inv, mp)
+        res = _venta_base(u, suc, mp)
         assert res["id_usuario"] == u.id
-        assert res["id_sucursal"] == inv.id_sucursal_id
+        assert res["id_sucursal"] == suc.id
         assert "id_inventario" not in res
         assert Decimal(res["total"]) == Decimal("0.00")
 
-    def test_create_via_jwt_deriva_inventario(self):
+    def test_create_via_jwt_deriva_sucursal(self):
         suc = SucursalFactory()
-        inv = InventarioFactory(id_sucursal=suc)
         u = UserFactory()
         Perfil.objects.create(usuario=u, id_sucursal=suc)
         mp = MetodoPagoFactory()
@@ -62,21 +59,17 @@ class TestVentaService:
 
     def test_create_sin_metodo_pago_falla(self):
         u = UserFactory()
-        inv = InventarioFactory()
+        suc = SucursalFactory()
         with pytest.raises(ValueError, match="id_metodo_pago"):
-            VentaService().create(
-                {"id_usuario": u.id, "id_inventario": inv.id}
-            )
+            VentaService().create({"id_usuario": u.id, "id_sucursal": suc.id})
 
     def test_get_all_filtra_por_sucursal(self):
         suc_a = SucursalFactory()
         suc_b = SucursalFactory()
-        inv_a = InventarioFactory(id_sucursal=suc_a)
-        inv_b = InventarioFactory(id_sucursal=suc_b)
         u = UserFactory()
         mp = MetodoPagoFactory()
-        _venta_base(u, inv_a, mp)
-        _venta_base(u, inv_b, mp)
+        _venta_base(u, suc_a, mp)
+        _venta_base(u, suc_b, mp)
 
         solo_a = VentaService().get_all(sucursal_id=suc_a.id)
         assert len(solo_a) == 1
@@ -87,17 +80,8 @@ class TestVentaService:
 class TestDetalleVentaService:
     def _setup(self, precio_sucursal=None):
         suc = SucursalFactory()
-        inv = InventarioFactory(id_sucursal=suc)
         prod = ProductoFactory(precio_venta=Decimal("100.00"))
-        DetalleInventarioService().create(
-            {
-                "id_producto": prod.id,
-                "id_inventario": inv.id,
-                "cantidad": 10,
-                "tipo_movimiento": "ENTRADA",
-                "razon": "Compra",
-            }
-        )
+        StockFactory(id_producto=prod, id_sucursal=suc, cantidad=10)
         if precio_sucursal:
             PrecioSucursalService().create(
                 {
@@ -109,23 +93,21 @@ class TestDetalleVentaService:
         u = UserFactory()
         Perfil.objects.create(usuario=u, id_sucursal=suc)
         mp = MetodoPagoFactory()
-        v = _venta_base(u, inv, mp)
-        return suc, inv, prod, u, v
+        v = _venta_base(u, suc, mp)
+        return suc, prod, u, v
 
     def test_create_calcula_subtotal_y_total(self):
-        suc, inv, prod, u, v = self._setup()
+        suc, prod, u, v = self._setup()
         res = DetalleVentaService().create(
             {"id_producto": prod.id, "id_venta": v["id"], "cantidad": 2}, user=u
         )
         assert res["subtotal"] == "200.00"
         assert Venta.objects.get(id=v["id"]).total == Decimal("200.00")
         # stock descontado: 10 - 2
-        assert (
-            DetalleInventarioService().get_stock(prod.id, inv.id) == 8
-        )
+        assert StockRepository().get_stock(prod.id, suc.id) == 8
 
     def test_create_usa_precio_sucursal(self):
-        suc, inv, prod, u, v = self._setup(precio_sucursal="150.00")
+        suc, prod, u, v = self._setup(precio_sucursal="150.00")
         res = DetalleVentaService().create(
             {"id_producto": prod.id, "id_venta": v["id"], "cantidad": 2}, user=u
         )
@@ -133,12 +115,11 @@ class TestDetalleVentaService:
 
     def test_create_sin_stock_falla(self):
         suc = SucursalFactory()
-        inv = InventarioFactory(id_sucursal=suc)
         prod = ProductoFactory()
         u = UserFactory()
         Perfil.objects.create(usuario=u, id_sucursal=suc)
         mp = MetodoPagoFactory()
-        v = _venta_base(u, inv, mp)
+        v = _venta_base(u, suc, mp)
         with pytest.raises(ValueError, match="no está disponible|Stock insuficiente"):
             DetalleVentaService().create(
                 {"id_producto": prod.id, "id_venta": v["id"], "cantidad": 1},
@@ -148,22 +129,13 @@ class TestDetalleVentaService:
     def test_cross_sucursal_bloqueado(self):
         suc_a = SucursalFactory()
         suc_b = SucursalFactory()
-        inv_a = InventarioFactory(id_sucursal=suc_a)
         prod = ProductoFactory()
-        DetalleInventarioService().create(
-            {
-                "id_producto": prod.id,
-                "id_inventario": inv_a.id,
-                "cantidad": 10,
-                "tipo_movimiento": "ENTRADA",
-                "razon": "Compra",
-            }
-        )
+        StockFactory(id_producto=prod, id_sucursal=suc_a, cantidad=10)
         user_b = UserFactory()
         Perfil.objects.create(usuario=user_b, id_sucursal=suc_b)
         owner_a = UserFactory()
         mp = MetodoPagoFactory()
-        v = _venta_base(owner_a, inv_a, mp)
+        v = _venta_base(owner_a, suc_a, mp)
         with pytest.raises(ValueError, match="no puede ser operada"):
             DetalleVentaService().create(
                 {"id_producto": prod.id, "id_venta": v["id"], "cantidad": 1},
@@ -173,7 +145,7 @@ class TestDetalleVentaService:
 
 @pytest.mark.django_db
 class TestVentasAPI:
-    def test_post_ventas_con_jwt(self, jwt_client, user, inventario):
+    def test_post_ventas_con_jwt(self, jwt_client, user, perfil):
         from ventas.models import MetodoPago
 
         mp = MetodoPago.objects.create(tipo="EFECTIVO", descripcion="cash")
@@ -181,36 +153,33 @@ class TestVentasAPI:
             "/api/ventas/", {"id_metodo_pago": mp.id}, format="json"
         )
         assert resp.status_code == 201, resp.content
-        assert resp.data["id_sucursal"] == inventario.id_sucursal_id
+        assert resp.data["id_sucursal"] == perfil.id_sucursal_id
         assert "id_inventario" not in resp.data
 
     def test_post_ventas_sin_auth_401(self, api_client):
         resp = api_client.post("/api/ventas/", {}, format="json")
         assert resp.status_code == 401
 
-    def test_get_ventas_filtra_sucursal_usuario(self, auth_client, user, inventario):
+    def test_get_ventas_filtra_sucursal_usuario(self, auth_client, user, perfil):
         mp = MetodoPagoFactory()
         # venta de otra sucursal no debe verse
         otra_suc = SucursalFactory()
-        otro_inv = Inventario.objects.create(
-            id_sucursal=otra_suc, descripcion="otro"
-        )
-        otro_user = User.objects.create_user(username="otro")
+        otro_user = UserFactory()
         VentaService().create(
             {
                 "id_usuario": otro_user.id,
-                "id_inventario": otro_inv.id,
+                "id_sucursal": otra_suc.id,
                 "id_metodo_pago": mp.id,
             }
         )
         VentaService().create(
             {
                 "id_usuario": user.id,
-                "id_inventario": inventario.id,
+                "id_sucursal": perfil.id_sucursal_id,
                 "id_metodo_pago": mp.id,
             }
         )
         resp = auth_client.get("/api/ventas/")
         assert resp.status_code == 200
         assert len(resp.data) == 1
-        assert resp.data[0]["id_sucursal"] == inventario.id_sucursal_id
+        assert resp.data[0]["id_sucursal"] == perfil.id_sucursal_id

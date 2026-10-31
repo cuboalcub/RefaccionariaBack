@@ -1,7 +1,5 @@
-from decimal import Decimal
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import transaction
-from ventas.services.detalle_venta_service import DetalleVentaService
 from ventas.models import Venta
 from ventas.repositories.venta_repository import VentaRepository
 from usuario.repositories.usuario_repository import UserRepository
@@ -10,7 +8,8 @@ from repository.base_service import BaseService
 from repository.exceptions import NotFoundError
 from repository.permissions import es_staff
 from producto.repositories.producto_repository import ProductoRepository
-from inventario.models import Inventario
+from sucursales.models import Sucursal
+from clientes.models import Cliente
 
 ERRORES_EN_DETALLES_PREFIJO = "Errores en detalles: "
 
@@ -22,17 +21,13 @@ class VentaService(BaseService):
         self.producto_repo = producto_repo or ProductoRepository()
 
     def _to_dict(self, instance):
-        id_sucursal = None
-        try:
-            if instance.id_inventario is not None:
-                id_sucursal = instance.id_inventario.id_sucursal_id
-        except Exception:
-            id_sucursal = None
         return {
             "id": instance.id,
             "id_usuario": instance.id_usuario.id if instance.id_usuario else None,
             "id_metodo_pago": instance.id_metodo_pago.id if instance.id_metodo_pago else None,
-            "id_sucursal": id_sucursal,
+            "id_sucursal": instance.id_sucursal_id,
+            "id_cliente": instance.id_cliente_id,
+            "estado": instance.estado,
             "total": str(instance.total),
             "fecha": instance.fecha.isoformat() if instance.fecha else None
         }
@@ -60,7 +55,7 @@ class VentaService(BaseService):
     def get_all(self, page: int = None, page_size: int = 10, sucursal_id: int = None):
         """Devuelve ventas divididas por sucursal con paginación opcional.
 
-        - Filtra por ``sucursal_id`` vía ``id_inventario__id_sucursal_id``.
+        - Filtra por ``sucursal_id`` vía ``id_sucursal_id``.
         - Si ``page`` es None devuelve lista plana (compatibilidad).
         - Si ``page`` se indica devuelve dict {total, page, page_size, total_pages, results}.
         """
@@ -74,11 +69,11 @@ class VentaService(BaseService):
                 sucursal_id = self._validar_sucursal_filtro(sucursal_id)
 
             qs = Venta.objects.all().select_related(
-                'id_usuario', 'id_metodo_pago', 'id_inventario__id_sucursal'
+                'id_usuario', 'id_metodo_pago', 'id_sucursal'
             ).order_by('-fecha', '-id')
 
             if sucursal_id is not None:
-                qs = qs.filter(id_inventario__id_sucursal_id=sucursal_id)
+                qs = qs.filter(id_sucursal_id=sucursal_id)
 
             if page is None:
                 return [self._to_dict(v) for v in qs]
@@ -101,12 +96,8 @@ class VentaService(BaseService):
         except Exception as e:
             raise ValueError(f"Error al obtener ventas: {str(e)}") from e
 
-    def _resolve_inventario_for_user(self, user):
-        """Resuelve el Inventario a partir del Perfil.sucursal del usuario autenticado.
-        - 1 sucursal -> 1..N inventarios: toma el primero por id (determinístico).
-        - Lanza ValueError si el usuario no tiene sucursal o la sucursal no tiene inventario.
-        """
-        # Intentar obtener id_sucursal_id sin query extra si perfil está cacheado
+    def _sucursal_del_usuario(self, user):
+        """Resuelve el id de Sucursal a partir del Perfil.sucursal del usuario autenticado."""
         perfil = getattr(user, 'perfil', None)
         user_sucursal_id = None
         if perfil is not None:
@@ -125,11 +116,7 @@ class VentaService(BaseService):
                 user_sucursal_id = None
         if user_sucursal_id is None:
             raise ValueError("El usuario no tiene una sucursal asignada. Asigne una sucursal al perfil")
-        qs = Inventario.objects.filter(id_sucursal_id=user_sucursal_id).order_by('id')
-        inventario = qs.first()
-        if not inventario:
-            raise ValueError(f"La sucursal {user_sucursal_id} no tiene un inventario asignado")
-        return inventario
+        return user_sucursal_id
 
     def _usuario_autenticado(self, data, user):
         via_jwt = user is not None and getattr(user, "is_authenticated", False)
@@ -152,59 +139,64 @@ class VentaService(BaseService):
             raise ValueError(f"Metodo de pago con id {data['id_metodo_pago']} no encontrado")
         return metodo_pago
 
-    def _inventario_override_staff(self, data):
+    def _cliente_validado(self, data):
+        """Normaliza id_cliente ausente/'' a None y valida existencia."""
+        if "id_cliente" not in data or data["id_cliente"] in (None, "", 0):
+            return None
+        cliente = Cliente.objects.filter(id=data["id_cliente"]).first()
+        if not cliente:
+            raise ValueError(f"Cliente con id {data['id_cliente']} no encontrado")
+        return cliente
+
+    def _sucursal_override_staff(self, data):
         try:
             suc_id = int(data["sucursal_id"])
         except (TypeError, ValueError):
             raise ValueError("sucursal_id debe ser entero")
-        from sucursales.models import Sucursal
         if not Sucursal.objects.filter(id=suc_id).exists():
             raise ValueError(f"Sucursal con id {suc_id} no encontrada")
-        inventario = Inventario.objects.filter(
-            id_sucursal_id=suc_id
-        ).order_by("id").first()
-        if not inventario:
-            raise ValueError(f"La sucursal {suc_id} no tiene un inventario asignado")
-        return inventario
+        return suc_id
 
-    def _inventario_del_usuario(self, user, is_staff):
+    def _sucursal_legacy(self, data):
+        """Sin JWT: exige id_sucursal explícito."""
+        suc_id = data.get("id_sucursal")
+        if suc_id is None:
+            raise ValueError("Faltan campos obligatorios: id_sucursal")
+        if not Sucursal.objects.filter(id=suc_id).exists():
+            raise ValueError(f"Sucursal con id {suc_id} no encontrada")
+        return suc_id
+
+    def _sucursal_via_jwt(self, data, user, is_staff):
+        """JWT: el usuario ancla la venta a su sucursal. Staff puede enviar
+        ``sucursal_id`` explícito como override."""
+        if is_staff and data.get("sucursal_id") is not None:
+            return self._sucursal_override_staff(data)
         try:
-            return self._resolve_inventario_for_user(user)
+            return self._sucursal_del_usuario(user)
         except ValueError as e:
             if is_staff:
                 raise ValueError(str(e) + " (staff: envíe sucursal_id explícito)")
             raise
 
-    def _inventario_via_jwt(self, data, user, is_staff):
-        if is_staff and "sucursal_id" in data and data["sucursal_id"] is not None:
-            return self._inventario_override_staff(data)
-        return self._inventario_del_usuario(user, is_staff)
-
-    def _inventario_legacy(self, data):
-        if "id_inventario" not in data or data["id_inventario"] is None:
-            raise ValueError("Faltan campos obligatorios: id_inventario")
-        inventario = Inventario.objects.filter(id=data['id_inventario']).first()
-        if not inventario:
-            raise ValueError(f"Inventario con id {data['id_inventario']} no encontrado")
-        return inventario
-
     def _resolver_cabecera(self, data, user=None):
-        """Resuelve (usuario, método de pago, inventario) con las mismas
+        """Resuelve (usuario, método de pago, sucursal_id) con las mismas
         reglas que :meth:`create` (JWT vs legacy, staff override)."""
         usuario, via_jwt = self._usuario_autenticado(data, user)
         metodo_pago = self._metodo_pago_resuelto(data)
         if via_jwt:
-            inventario = self._inventario_via_jwt(data, usuario, es_staff(usuario))
+            sucursal_id = self._sucursal_via_jwt(data, usuario, es_staff(usuario))
         else:
-            inventario = self._inventario_legacy(data)
-        return usuario, metodo_pago, inventario
+            sucursal_id = self._sucursal_legacy(data)
+        return usuario, metodo_pago, sucursal_id
 
     def create(self, data, user=None):
-        user, metodo_pago, inventario = self._resolver_cabecera(data, user=user)
+        user, metodo_pago, sucursal_id = self._resolver_cabecera(data, user=user)
         venta_data = {
             "id_usuario": user,
             "id_metodo_pago": metodo_pago,
-            "id_inventario": inventario,
+            "id_sucursal_id": sucursal_id,
+            "id_cliente": self._cliente_validado(data),
+            "estado": "completada",
             "total": 0
         }
         venta = super().create(venta_data)
@@ -238,8 +230,8 @@ class VentaService(BaseService):
             lineas.append({"indice": i, "producto_id": pid, "cantidad": cant})
         return lineas
 
-    def _bloquear_productos(self, lineas, inventario):
-        from inventario.models import DetalleInventario as _DetalleInv
+    def _bloquear_productos(self, lineas, sucursal_id):
+        from inventario.models import Stock as _Stock
         from producto.models import Producto as _Producto
 
         # Bloqueo determinista: ordena IDs para evitar deadlocks entre
@@ -249,23 +241,23 @@ class VentaService(BaseService):
             _Producto.objects.select_for_update().filter(id__in=ids_ordenados)
         )
         productos = {p.id: p for p in productos_qs}
-        # Serializar también las filas de stock del inventario para que dos
+        # Serializar también las filas de stock de la sucursal para que dos
         # ventas concurrentes no lean el mismo stock a la vez.
         list(
-            _DetalleInv.objects.select_for_update().filter(
+            _Stock.objects.select_for_update().filter(
                 id_producto_id__in=ids_ordenados,
-                id_inventario_id=inventario.id,
+                id_sucursal_id=sucursal_id,
             )
         )
         return ids_ordenados, productos
 
-    def _errores_de_stock(self, lineas, ids_ordenados, productos, inventario, inv_service):
+    def _errores_de_stock(self, lineas, ids_ordenados, productos, sucursal_id, inv_service):
         errores = []
         # Validación de sucursal/stock. Acumula cantidades por producto para
         # detectar el caso de producto repetido que excede el stock en total.
         stocks = {}
         for pid in ids_ordenados:
-            stocks[pid] = inv_service.get_stock(pid, inventario.id)
+            stocks[pid] = inv_service.get_stock(pid, sucursal_id)
         acumulado = {}
         for ln in lineas:
             acumulado[ln["producto_id"]] = acumulado.get(ln["producto_id"], 0) + ln["cantidad"]
@@ -275,7 +267,7 @@ class VentaService(BaseService):
                 nombre = productos[pid].nombre
                 errores.append(
                     f"Línea {ln['indice']} (producto {pid} '{nombre}'): "
-                    f"no disponible en inventario {inventario.id} - stock 0"
+                    f"no disponible en la sucursal {sucursal_id} - stock 0"
                 )
         for pid, total_pid in acumulado.items():
             if total_pid > stocks.get(pid, 0):
@@ -297,8 +289,8 @@ class VentaService(BaseService):
         detalle falla no queda venta huérfana, ni detalles, ni movimientos.
         """
         from decimal import Decimal as _Decimal
-        from inventario.services.detalle_inventario_service import (
-            DetalleInventarioService as _InvService,
+        from inventario.services.movimiento_inventario_service import (
+            MovimientoInventarioService as _InvService,
         )
         from inventario.services.precio_sucursal_service import (
             PrecioSucursalService as _PrecioService,
@@ -309,7 +301,7 @@ class VentaService(BaseService):
         if not isinstance(detalles_raw, list) or not detalles_raw:
             raise ValueError("Faltan campos obligatorios: detalles (lista no vacía)")
 
-        user_obj, metodo_pago, inventario = self._resolver_cabecera(data, user=user)
+        user_obj, metodo_pago, sucursal_id = self._resolver_cabecera(data, user=user)
         inv_service = _InvService()
 
         # Normalizar líneas: índice + producto + cantidad.
@@ -318,7 +310,7 @@ class VentaService(BaseService):
         if errores:
             raise ValueError(ERRORES_EN_DETALLES_PREFIJO + "; ".join(errores))
 
-        ids_ordenados, productos = self._bloquear_productos(lineas, inventario)
+        ids_ordenados, productos = self._bloquear_productos(lineas, sucursal_id)
         for ln in lineas:
             if ln["producto_id"] not in productos:
                 errores.append(
@@ -327,23 +319,24 @@ class VentaService(BaseService):
         if errores:
             raise ValueError(ERRORES_EN_DETALLES_PREFIJO + "; ".join(errores))
 
-        # Nota sucursal: el inventario ya viene derivado del perfil del
+        # Nota sucursal: la sucursal viene derivada del perfil del
         # usuario (no-staff) o del override explícito de staff en
-        # _resolver_cabecera, y el stock se mide en ese inventario, por lo
+        # _resolver_cabecera, y el stock se mide en esa sucursal, por lo
         # que un cross-sucursal es imposible en este camino. No se duplica
         # el chequeo del flujo por detalle.
         errores = self._errores_de_stock(
-            lineas, ids_ordenados, productos, inventario, inv_service
+            lineas, ids_ordenados, productos, sucursal_id, inv_service
         )
         if errores:
             raise ValueError(ERRORES_EN_DETALLES_PREFIJO + "; ".join(errores))
 
         # Escritura: una venta + N detalles + N SALIDA, total en un save.
-        sucursal_id = getattr(inventario, "id_sucursal_id", None)
         venta_obj = Venta.objects.create(
             id_usuario=user_obj,
             id_metodo_pago=metodo_pago,
-            id_inventario=inventario,
+            id_sucursal_id=sucursal_id,
+            id_cliente=self._cliente_validado(data),
+            estado="completada",
             total=_Decimal("0"),
         )
         total = _Decimal("0")
@@ -359,7 +352,7 @@ class VentaService(BaseService):
                 subtotal=subtotal,
             )
             inv_service.crear_salida_por_venta(
-                det, producto, inventario, ln["cantidad"]
+                det, producto, sucursal_id, ln["cantidad"], user=user_obj
             )
             total += subtotal
             detalles_out.append(
@@ -376,15 +369,35 @@ class VentaService(BaseService):
         resultado["detalles"] = detalles_out
         return resultado
 
+    def _revertir_salidas(self, venta):
+        """Devuelve el stock de todos los detalles de una venta (por cancelación)."""
+        from ventas.models import DetalleVenta
+        from inventario.services.movimiento_inventario_service import (
+            MovimientoInventarioService,
+        )
+        detalles = list(
+            DetalleVenta.objects.select_for_update().filter(
+                id_venta_id=venta.id
+            )
+        )
+        inventario_service = MovimientoInventarioService()
+        for detalle in detalles:
+            inventario_service.revertir_salida_por_venta(detalle)
+
     def update(self, entity_id: int, data, user=None):
-        """Actualiza una venta. Solo ``id_metodo_pago`` es mutable: ``total``
-        se recalcula desde los detalles y ``id_inventario``/``id_usuario``/
-        ``fecha`` se ignoran para evitar manipulación (antes un PUT podía
-        fijar cualquier total).
+        """Actualiza una venta. Campos mutables: ``id_metodo_pago``,
+        ``id_cliente`` y ``estado``; ``total`` se recalcula desde los
+        detalles y ``id_sucursal``/``id_usuario``/``fecha`` se ignoran.
+
+        ``estado='cancelada'`` devuelve el stock y elimina los detalles:
+        una venta cancelada no debe seguir contando.
         """
         data = dict(data)
-        for campo in ("total", "id_inventario", "id_usuario", "fecha"):
+        for campo in ("total", "id_inventario", "id_sucursal", "id_usuario", "fecha"):
             data.pop(campo, None)
+        estado = data.get("estado")
+        if estado is not None and estado not in ("completada", "cancelada"):
+            raise ValueError("estado inválido: use 'completada' o 'cancelada'")
         if "id_metodo_pago" in data and data["id_metodo_pago"] is not None:
             mp_val = data["id_metodo_pago"]
             try:
@@ -396,36 +409,51 @@ class VentaService(BaseService):
             if not mp:
                 raise ValueError(f"Metodo de pago con id {mp_val} no encontrado")
             data["id_metodo_pago"] = mp
-        return super().update(entity_id, data)
-
-    def delete(self, entity_id: int, user=None):
-        """Elimina una venta revirtiendo sus efectos sobre el inventario.
-
-        Sin este override, ``BaseService.delete`` borraba la venta y por
-        CASCADE sus detalles, pero los ``DetalleInventario``/``Movimiento``
-        SALIDA quedaban huérfanos (``id_detalle_venta`` es SET_NULL) y el
-        stock nunca se restauraba. Todo se ejecuta en un único
-        ``transaction.atomic`` con bloqueo de la venta.
-        """
-        from ventas.models import DetalleVenta
-        from inventario.services.detalle_inventario_service import (
-            DetalleInventarioService,
-        )
-
+        if "id_cliente" in data:
+            data["id_cliente"] = self._cliente_validado(data)
         with transaction.atomic():
             try:
-                instance = Venta.objects.select_for_update().get(id=entity_id)
+                venta = Venta.objects.select_for_update().get(id=entity_id)
             except (Venta.DoesNotExist, ObjectDoesNotExist):
                 raise NotFoundError(
                     f"venta con id {entity_id} no encontrado"
                 )
-            detalles = list(
-                DetalleVenta.objects.select_for_update().filter(
-                    id_venta_id=entity_id
+            if estado == "cancelada":
+                if venta.estado == "completada":
+                    self._revertir_salidas(venta)
+                else:
+                    # Ya cancelada: idempotente, no se vuelve a revertir.
+                    data.pop("estado", None)
+            elif estado == "completada" and venta.estado == "cancelada":
+                raise ValueError("No se puede reactivar una venta cancelada")
+        return super().update(entity_id, data)
+
+    def delete(self, entity_id: int, user=None):
+        """Cancela una venta (soft delete) devolviendo su stock.
+
+        Sin la reversión, los movimientos SALIDA quedarían apuntando a una
+        venta desactivada y el stock nunca se restauraría. Todo se ejecuta
+        en un único ``transaction.atomic`` con bloqueo de la venta e
+        ``idempotente``: cancelar dos veces no toca nada la segunda vez.
+        """
+        with transaction.atomic():
+            try:
+                venta = Venta.objects.select_for_update().get(id=entity_id)
+            except (Venta.DoesNotExist, ObjectDoesNotExist):
+                raise NotFoundError(
+                    f"venta con id {entity_id} no encontrado"
                 )
-            )
-            inventario_service = DetalleInventarioService()
-            for detalle in detalles:
-                inventario_service.revertir_salida_por_venta(detalle)
-            instance.delete()
-            return {"message": "venta eliminado exitosamente"}
+            if venta.estado == "cancelada":
+                return {
+                    "message": "venta ya estaba cancelada",
+                    "id": venta.id,
+                    "estado": venta.estado,
+                }
+            self._revertir_salidas(venta)
+            venta.estado = "cancelada"
+            venta.save(update_fields=["estado"])
+            return {
+                "message": "venta cancelada exitosamente",
+                "id": venta.id,
+                "estado": venta.estado,
+            }

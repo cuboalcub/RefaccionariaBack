@@ -5,7 +5,7 @@ from factory import fuzzy
 from django.contrib.auth.models import User
 
 from sucursales.models import Sucursal
-from inventario.models import Inventario, MovimientoInventario
+from inventario.models import Stock, MovimientoInventario
 from producto.models import Tipo, Proveedor, Producto
 from ventas.models import MetodoPago
 from usuario.models import Perfil
@@ -17,14 +17,6 @@ class SucursalFactory(factory.django.DjangoModelFactory):
 
     ubicacion = factory.Sequence(lambda n: f"Sucursal {n}")
     nombre_sucursal = factory.Sequence(lambda n: f"Sucursal {n}")
-
-
-class InventarioFactory(factory.django.DjangoModelFactory):
-    class Meta:
-        model = Inventario
-
-    id_sucursal = factory.SubFactory(SucursalFactory)
-    descripcion = factory.Faker("sentence", nb_words=3)
 
 
 class TipoFactory(factory.django.DjangoModelFactory):
@@ -58,6 +50,15 @@ class ProductoFactory(factory.django.DjangoModelFactory):
     id_proveedor = factory.SubFactory(ProveedorFactory)
 
 
+class StockFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = Stock
+
+    id_sucursal = factory.SubFactory(SucursalFactory)
+    id_producto = factory.SubFactory(ProductoFactory)
+    cantidad = 0
+
+
 class MovimientoEntradaFactory(factory.django.DjangoModelFactory):
     class Meta:
         model = MovimientoInventario
@@ -65,6 +66,8 @@ class MovimientoEntradaFactory(factory.django.DjangoModelFactory):
     tipo = MovimientoInventario.TipoMovimiento.ENTRADA
     cantidad = 10
     razon = "Compra inicial"
+    id_producto = factory.SubFactory(ProductoFactory)
+    id_sucursal = factory.SubFactory(SucursalFactory)
 
 
 class UserFactory(factory.django.DjangoModelFactory):

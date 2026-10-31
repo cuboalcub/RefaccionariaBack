@@ -6,20 +6,18 @@ from unittest import mock
 import pytest
 from rest_framework.test import APIClient
 
-from producto.models import Producto, Proveedor, Tipo
+from producto.models import Producto
 from producto.repositories.producto_repository import ProductoRepository
 from producto.repositories.proveedor_repository import ProveedorRepository
 from producto.repositories.tipo_repository import TipoRepository
 from producto.services.producto_service import ProductoService
 from producto.services.proveedor_service import ProveedorService
 from producto.services.tipo_service import TipoService
-from sucursales.models import Sucursal
 from sucursales.repositories.sucursal_repository import SucursalRepository
 from sucursales.services.sucursal_service import SucursalService
-from inventario.services.detalle_inventario_service import DetalleInventarioService
+from inventario.services.movimiento_inventario_service import MovimientoInventarioService
 from inventario.services.precio_sucursal_service import PrecioSucursalService
 from tests.factories import (
-    InventarioFactory,
     ProductoFactory,
     ProveedorFactory,
     SucursalFactory,
@@ -57,11 +55,11 @@ def _producto_payload(tipo=None, proveedor=None, **kw):
 
 
 def _dar_stock(producto, sucursal, cantidad=5):
-    inv = InventarioFactory(id_sucursal=sucursal)
-    DetalleInventarioService().create(
+    inv = sucursal
+    MovimientoInventarioService().create(
         {
             "id_producto": producto.id,
-            "id_inventario": inv.id,
+            "id_sucursal": inv.id,
             "cantidad": cantidad,
             "tipo_movimiento": "ENTRADA",
             "razon": "Compra",

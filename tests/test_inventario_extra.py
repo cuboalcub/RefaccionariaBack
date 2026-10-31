@@ -5,28 +5,17 @@ from decimal import Decimal
 
 from django.contrib.auth.models import User
 
-from inventario.models import (
-    DetalleInventario,
-    Inventario,
-    MovimientoInventario,
-    PrecioSucursal,
-)
-from inventario.repositories.detalle_inventario_repository import (
-    DetalleInventarioRepository,
-)
+from inventario.models import Stock, MovimientoInventario, PrecioSucursal
+from inventario.repositories.stock_repository import StockRepository
 from inventario.repositories.precio_sucursal_repository import (
     PrecioSucursalRepository,
 )
-from inventario.services.detalle_inventario_service import DetalleInventarioService
-from inventario.services.inventario_service import InventarioService
 from inventario.services.movimiento_inventario_service import (
     MovimientoInventarioService,
 )
 from inventario.services.precio_sucursal_service import PrecioSucursalService
 from repository.exceptions import NotFoundError
 from tests.factories import (
-    InventarioFactory,
-    MovimientoEntradaFactory,
     ProductoFactory,
     ProveedorFactory,
     SucursalFactory,
@@ -45,58 +34,6 @@ def _venta_con_detalle(producto):
 
 
 # ---------------------------------------------------------------------------
-# InventarioService
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.django_db
-class TestInventarioServiceExtra:
-    def test_create_ok(self):
-        suc = SucursalFactory()
-        res = InventarioService().create(
-            {"id_sucursal": suc.id, "descripcion": "Central"}
-        )
-        assert res["id_sucursal"] == suc.id
-
-    def test_create_sin_sucursal_falla(self):
-        with pytest.raises(ValueError, match="id_sucursal"):
-            InventarioService().create({"descripcion": "X"})
-
-    def test_create_sucursal_inexistente_falla(self):
-        with pytest.raises(ValueError, match="no existe"):
-            InventarioService().create(
-                {"id_sucursal": 99999, "descripcion": "X"}
-            )
-
-    def test_update_cambia_sucursal(self):
-        inv = InventarioFactory()
-        suc2 = SucursalFactory()
-        res = InventarioService().update(inv.id, {"id_sucursal": suc2.id})
-        assert res["id_sucursal"] == suc2.id
-
-    def test_update_sucursal_inexistente_falla(self):
-        inv = InventarioFactory()
-        with pytest.raises(ValueError, match="no existe"):
-            InventarioService().update(inv.id, {"id_sucursal": 99999})
-
-    def test_update_not_found(self):
-        with pytest.raises(NotFoundError):
-            InventarioService().update(99999, {"descripcion": "X"})
-
-    def test_get_all_get_by_id_delete(self):
-        inv = InventarioFactory()
-        svc = InventarioService()
-        assert any(i["id"] == inv.id for i in svc.get_all())
-        assert svc.get_by_id(inv.id)["id"] == inv.id
-        assert "eliminado" in svc.delete(inv.id)["message"].lower()
-        with pytest.raises(NotFoundError):
-            svc.get_by_id(inv.id)
-
-    def test_to_dict_none(self):
-        assert InventarioService()._to_dict(None) is None
-
-
-# ---------------------------------------------------------------------------
 # MovimientoInventarioService
 # ---------------------------------------------------------------------------
 
@@ -104,11 +41,20 @@ class TestInventarioServiceExtra:
 @pytest.mark.django_db
 class TestMovimientoServiceExtra:
     def test_crud_basico(self):
+        suc = SucursalFactory()
+        prod = ProductoFactory()
         svc = MovimientoInventarioService()
         res = svc.create(
-            {"tipo": "ENTRADA", "cantidad": 5, "razon": "Compra"}
+            {
+                "id_producto": prod.id,
+                "id_sucursal": suc.id,
+                "tipo": "ENTRADA",
+                "cantidad": 5,
+                "razon": "Compra",
+            }
         )
         assert res["tipo"] == "ENTRADA"
+        assert res["id_sucursal"] == suc.id
         assert svc.get_by_id(res["id"])["cantidad"] == 5
         upd = svc.update(res["id"], {"cantidad": 7})
         assert upd["cantidad"] == 7
@@ -121,6 +67,8 @@ class TestMovimientoServiceExtra:
         assert MovimientoInventarioService()._to_dict(None) is None
 
     def test_to_dict_fecha_none(self):
+        from tests.factories import MovimientoEntradaFactory
+
         mov = MovimientoEntradaFactory()
         # fecha NOT NULL en DB: solo anular en memoria para rama None
         mov.fecha = None
@@ -128,80 +76,94 @@ class TestMovimientoServiceExtra:
         assert d["fecha"] is None
         assert d["razon"] == "Compra inicial"
 
+    def test_get_stock_map_por_sucursal(self):
+        suc = SucursalFactory()
+        prod = ProductoFactory()
+        svc = MovimientoInventarioService()
+        svc.create(
+            {
+                "id_producto": prod.id,
+                "id_sucursal": suc.id,
+                "cantidad": 7,
+                "tipo_movimiento": "ENTRADA",
+                "razon": "Compra",
+            }
+        )
+        assert svc.get_stock_map_por_sucursal(suc.id) == {prod.id: 7}
+
 
 # ---------------------------------------------------------------------------
-# DetalleInventarioService: _validar
+# MovimientoInventarioService: _validar
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
-class TestDetalleValidar:
+class TestMovimientoValidar:
     def test_falta_producto(self):
-        inv = InventarioFactory()
+        suc = SucursalFactory()
         with pytest.raises(ValueError, match="id_producto"):
-            DetalleInventarioService().create(
-                {"id_inventario": inv.id, "cantidad": 1}
-            )
+            MovimientoInventarioService().create({"id_sucursal": suc.id, "cantidad": 1})
 
-    def test_falta_inventario(self):
+    def test_falta_sucursal(self):
         prod = ProductoFactory()
-        with pytest.raises(ValueError, match="id_inventario"):
-            DetalleInventarioService().create(
-                {"id_producto": prod.id, "cantidad": 1}
-            )
+        with pytest.raises(ValueError, match="id_sucursal"):
+            MovimientoInventarioService().create({"id_producto": prod.id, "cantidad": 1})
 
     def test_falta_cantidad(self):
-        inv = InventarioFactory()
+        suc = SucursalFactory()
         prod = ProductoFactory()
         with pytest.raises(ValueError, match="cantidad"):
-            DetalleInventarioService().create(
-                {"id_producto": prod.id, "id_inventario": inv.id}
+            MovimientoInventarioService().create(
+                {"id_producto": prod.id, "id_sucursal": suc.id}
             )
 
     def test_producto_inexistente(self):
-        inv = InventarioFactory()
-        svc = DetalleInventarioService()
+        suc = SucursalFactory()
         with pytest.raises(ValueError, match="producto"):
-            svc._validar(
+            MovimientoInventarioService()._validar(
+                {"id_producto": 99999, "id_sucursal": suc.id, "cantidad": 1}
+            )
+
+    def test_sucursal_inexistente(self):
+        prod = ProductoFactory()
+        with pytest.raises(ValueError, match="sucursal"):
+            MovimientoInventarioService()._validar(
+                {"id_producto": prod.id, "id_sucursal": 99999, "cantidad": 1}
+            )
+
+    def test_id_movimiento_externo_deprecado(self):
+        prod = ProductoFactory()
+        suc = SucursalFactory()
+        with pytest.raises(ValueError, match="deprecado"):
+            MovimientoInventarioService().create(
                 {
-                    "id_producto": 99999,
-                    "id_inventario": inv.id,
+                    "id_producto": prod.id,
+                    "id_sucursal": suc.id,
+                    "id_movimiento": 1,
                     "cantidad": 1,
                 }
             )
 
-    def test_inventario_inexistente(self):
+    def test_movimiento_inexistente_bulk(self):
         prod = ProductoFactory()
-        with pytest.raises(ValueError, match="inventario"):
-            DetalleInventarioService()._validar(
+        suc = SucursalFactory()
+        with pytest.raises(ValueError, match="deprecado"):
+            MovimientoInventarioService().bulk_create(
                 {
-                    "id_producto": prod.id,
-                    "id_inventario": 99999,
-                    "cantidad": 1,
-                }
-            )
-
-    def test_movimiento_inexistente(self):
-        prod = ProductoFactory()
-        inv = InventarioFactory()
-        with pytest.raises(ValueError, match="movimiento"):
-            DetalleInventarioService()._validar(
-                {
-                    "id_producto": prod.id,
-                    "id_inventario": inv.id,
+                    "id_sucursal": suc.id,
                     "id_movimiento": 99999,
-                    "cantidad": 1,
+                    "items": [{"id_producto": prod.id, "cantidad": 1}],
                 }
             )
 
     def test_tipo_invalido(self):
         prod = ProductoFactory()
-        inv = InventarioFactory()
+        suc = SucursalFactory()
         with pytest.raises(ValueError, match="ENTRADA o SALIDA"):
-            DetalleInventarioService()._validar(
+            MovimientoInventarioService()._validar(
                 {
                     "id_producto": prod.id,
-                    "id_inventario": inv.id,
+                    "id_sucursal": suc.id,
                     "cantidad": 1,
                     "tipo_movimiento": "ROBO",
                 }
@@ -209,272 +171,336 @@ class TestDetalleValidar:
 
     def test_create_tipo_invalido(self):
         prod = ProductoFactory()
-        inv = InventarioFactory()
+        suc = SucursalFactory()
         with pytest.raises(ValueError, match="ENTRADA o SALIDA"):
-            DetalleInventarioService().create(
+            MovimientoInventarioService().create(
                 {
                     "id_producto": prod.id,
-                    "id_inventario": inv.id,
+                    "id_sucursal": suc.id,
                     "cantidad": 1,
                     "tipo_movimiento": "ROBO",
                 }
             )
 
-    def test_create_con_movimiento_explicito(self):
-        prod = ProductoFactory()
-        inv = InventarioFactory()
-        mov = MovimientoEntradaFactory()
-        res = DetalleInventarioService().create(
-            {
-                "id_producto": prod.id,
-                "id_inventario": inv.id,
-                "id_movimiento": mov.id,
-                "cantidad": 4,
-            }
-        )
-        assert res["id_movimiento"] == mov.id
-
     def test_create_proveedor_inexistente(self):
         prod = ProductoFactory()
-        inv = InventarioFactory()
+        suc = SucursalFactory()
         with pytest.raises(ValueError, match="proveedor"):
-            DetalleInventarioService().create(
+            MovimientoInventarioService().create(
                 {
                     "id_producto": prod.id,
-                    "id_inventario": inv.id,
+                    "id_sucursal": suc.id,
                     "id_proveedor": 99999,
                     "cantidad": 1,
                 }
             )
 
     def test_to_dict_none(self):
-        assert DetalleInventarioService()._to_dict(None) is None
+        assert MovimientoInventarioService()._to_dict(None) is None
 
 
 # ---------------------------------------------------------------------------
-# DetalleInventarioService: update / delete
+# MovimientoInventarioService: update / delete
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
-class TestDetalleUpdateDelete:
+class TestMovimientoUpdateDelete:
     def _entrada(self, cantidad=5):
-        inv = InventarioFactory()
+        suc = SucursalFactory()
         prod = ProductoFactory()
-        svc = DetalleInventarioService()
+        svc = MovimientoInventarioService()
         res = svc.create(
             {
                 "id_producto": prod.id,
-                "id_inventario": inv.id,
+                "id_sucursal": suc.id,
                 "cantidad": cantidad,
                 "tipo_movimiento": "ENTRADA",
                 "razon": "Compra",
             }
         )
-        return svc, res, inv, prod
+        return svc, res, suc, prod
 
     def test_update_not_found(self):
         with pytest.raises(NotFoundError):
-            DetalleInventarioService().update(99999, {"cantidad": 1})
+            MovimientoInventarioService().update(99999, {"cantidad": 1})
 
     def test_update_cantidad_ok(self):
-        svc, res, inv, prod = self._entrada()
+        svc, res, suc, prod = self._entrada()
         upd = svc.update(res["id"], {"cantidad": 8})
         assert upd["cantidad"] == 8
+        assert svc.get_stock(prod.id, suc.id) == 8
 
     def test_update_cantidad_negativa(self):
-        svc, res, inv, prod = self._entrada()
+        svc, res, suc, prod = self._entrada()
         with pytest.raises(ValueError, match="negativa"):
             svc.update(res["id"], {"cantidad": -2})
 
     def test_update_salida_sin_stock(self):
-        inv = InventarioFactory()
+        suc = SucursalFactory()
         prod = ProductoFactory()
-        svc = DetalleInventarioService()
+        svc = MovimientoInventarioService()
         svc.create(
             {
                 "id_producto": prod.id,
-                "id_inventario": inv.id,
+                "id_sucursal": suc.id,
                 "cantidad": 5,
                 "tipo_movimiento": "ENTRADA",
                 "razon": "Compra",
             }
         )
-        mov_sal = MovimientoInventario.objects.create(
-            tipo="SALIDA", cantidad=3, razon="Venta"
-        )
-        det = svc.create(
+        res = svc.create(
             {
                 "id_producto": prod.id,
-                "id_inventario": inv.id,
-                "id_movimiento": mov_sal.id,
+                "id_sucursal": suc.id,
                 "cantidad": 3,
+                "tipo_movimiento": "SALIDA",
+                "razon": "Venta",
             }
         )
         with pytest.raises(ValueError, match="Stock insuficiente"):
-            svc.update(det["id"], {"cantidad": 100})
+            svc.update(res["id"], {"cantidad": 100})
+        svc.update(res["id"], {"cantidad": 5})
+        assert svc.get_stock(prod.id, suc.id) == 0
 
-    def test_update_cambia_producto_e_inventario(self):
-        svc, res, inv, prod = self._entrada()
+    def test_update_cambia_producto_e_sucursal(self):
+        svc, res, suc, prod = self._entrada()
         prod2 = ProductoFactory()
-        inv2 = InventarioFactory()
-        upd = svc.update(
-            res["id"],
-            {"id_producto": prod2.id, "id_inventario": inv2.id},
-        )
+        suc2 = SucursalFactory()
+        upd = svc.update(res["id"], {"id_producto": prod2.id, "id_sucursal": suc2.id})
         assert upd["id_producto"] == prod2.id
-        assert upd["id_inventario"] == inv2.id
+        assert upd["id_sucursal"] == suc2.id
+        assert svc.get_stock(prod.id, suc.id) == 0
+        assert svc.get_stock(prod2.id, suc2.id) == 5
 
     def test_update_producto_inexistente(self):
-        svc, res, inv, prod = self._entrada()
+        svc, res, suc, prod = self._entrada()
         with pytest.raises(ValueError, match="producto"):
             svc.update(res["id"], {"id_producto": 99999})
 
-    def test_update_inventario_inexistente(self):
-        svc, res, inv, prod = self._entrada()
-        with pytest.raises(ValueError, match="inventario"):
-            svc.update(res["id"], {"id_inventario": 99999})
+    def test_update_sucursal_inexistente(self):
+        svc, res, suc, prod = self._entrada()
+        with pytest.raises(ValueError, match="sucursal"):
+            svc.update(res["id"], {"id_sucursal": 99999})
 
     def test_update_proveedor_invalido(self):
-        svc, res, inv, prod = self._entrada()
+        svc, res, suc, prod = self._entrada()
         with pytest.raises(ValueError, match="proveedor"):
             svc.update(res["id"], {"id_proveedor": 99999})
 
     def test_update_proveedor_none(self):
-        svc, res, inv, prod = self._entrada()
+        svc, res, suc, prod = self._entrada()
         prov = ProveedorFactory()
         svc.update(res["id"], {"id_proveedor": prov.id})
         upd = svc.update(res["id"], {"id_proveedor": None})
         assert upd["id_proveedor"] is None
 
     def test_update_tipo_movimiento_invalido(self):
-        svc, res, inv, prod = self._entrada()
+        svc, res, suc, prod = self._entrada()
         with pytest.raises(ValueError, match="ENTRADA o SALIDA"):
             svc.update(res["id"], {"tipo_movimiento": "ROBO"})
 
-    def test_update_movimiento_razon(self):
-        svc, res, inv, prod = self._entrada()
-        upd = svc.update(
-            res["id"],
-            {"razon": "Ajuste", "observaciones": "obs", "tipo_movimiento": "ENTRADA"},
-        )
-        assert upd["id"] == res["id"]
-        mov = MovimientoInventario.objects.get(id=upd["id_movimiento"])
-        assert mov.razon == "Ajuste"
-        assert mov.observaciones == "obs"
+    def test_update_razon_y_observaciones(self):
+        svc, res, suc, prod = self._entrada()
+        upd = svc.update(res["id"], {"razon": "Ajuste", "observaciones": "obs"})
+        assert upd["razon"] == "Ajuste"
+        assert upd["observaciones"] == "obs"
 
     def test_delete_ok_y_not_found(self):
-        svc, res, inv, prod = self._entrada()
+        svc, res, suc, prod = self._entrada()
         assert "eliminado" in svc.delete(res["id"])["message"].lower()
-        with pytest.raises(NotFoundError):
-            svc.delete(res["id"])
         with pytest.raises(NotFoundError):
             svc.delete(99999)
 
+    def test_delete_salida_devuelve_stock(self):
+        suc = SucursalFactory()
+        prod = ProductoFactory()
+        svc = MovimientoInventarioService()
+        svc.create(
+            {
+                "id_producto": prod.id,
+                "id_sucursal": suc.id,
+                "cantidad": 9,
+                "tipo_movimiento": "ENTRADA",
+                "razon": "Compra",
+            }
+        )
+        sal = svc.create(
+            {
+                "id_producto": prod.id,
+                "id_sucursal": suc.id,
+                "cantidad": 4,
+                "tipo_movimiento": "SALIDA",
+                "razon": "Venta",
+            }
+        )
+        assert svc.get_stock(prod.id, suc.id) == 5
+        svc.delete(sal["id"])
+        assert svc.get_stock(prod.id, suc.id) == 9
+
 
 # ---------------------------------------------------------------------------
-# DetalleInventarioService: ventas / stock / sucursal
+# MovimientoInventarioService: ventas / stock / sucursal
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
 class TestDetalleVentaHelpers:
     def test_crear_ajustar_revertir_salida(self):
-        inv = InventarioFactory()
+        suc = SucursalFactory()
         prod = ProductoFactory()
-        svc = DetalleInventarioService()
+        svc = MovimientoInventarioService()
         svc.create(
             {
                 "id_producto": prod.id,
-                "id_inventario": inv.id,
+                "id_sucursal": suc.id,
                 "cantidad": 10,
                 "tipo_movimiento": "ENTRADA",
                 "razon": "Compra",
             }
         )
         _, dv = _venta_con_detalle(prod)
-        det = svc.crear_salida_por_venta(dv, prod, inv, 3)
-        assert det.cantidad == 3
-        assert svc.get_stock(prod.id, inv.id) == 7
+        det = svc.crear_salida_por_venta(dv, prod, suc.id, 3)
+        assert det["cantidad"] == 3
+        assert det["id_usuario"] is None
+        assert svc.get_stock(prod.id, suc.id) == 7
 
         aj = svc.ajustar_salida_por_venta(dv, 5)
-        assert aj.cantidad == 5
-        assert svc.get_stock(prod.id, inv.id) == 5
+        assert aj["cantidad"] == 5
+        assert svc.get_stock(prod.id, suc.id) == 5
 
         with pytest.raises(ValueError, match="Stock insuficiente"):
             svc.ajustar_salida_por_venta(dv, 100)
 
         assert svc.revertir_salida_por_venta(dv) is True
-        assert svc.get_stock(prod.id, inv.id) == 10
+        assert svc.get_stock(prod.id, suc.id) == 10
+
+    def test_ajustar_salida_cambia_sucursal(self):
+        suc = SucursalFactory()
+        suc2 = SucursalFactory()
+        prod = ProductoFactory()
+        svc = MovimientoInventarioService()
+        svc.create(
+            {
+                "id_producto": prod.id,
+                "id_sucursal": suc.id,
+                "cantidad": 10,
+                "tipo_movimiento": "ENTRADA",
+                "razon": "Compra",
+            }
+        )
+        _, dv = _venta_con_detalle(prod)
+        svc.crear_salida_por_venta(dv, prod, suc.id, 3)
+        svc.create(
+            {
+                "id_producto": prod.id,
+                "id_sucursal": suc2.id,
+                "cantidad": 8,
+                "tipo_movimiento": "ENTRADA",
+                "razon": "Compra",
+            }
+        )
+        aj = svc.ajustar_salida_por_venta(dv, 5, sucursal_id=suc2.id)
+        assert aj["id_sucursal"] == suc2.id
+        assert svc.get_stock(prod.id, suc.id) == 10
+        assert svc.get_stock(prod.id, suc2.id) == 3
+
+    def test_ajustar_salida_a_sucursal_sin_stock(self):
+        suc = SucursalFactory()
+        suc2 = SucursalFactory()
+        prod = ProductoFactory()
+        svc = MovimientoInventarioService()
+        svc.create(
+            {
+                "id_producto": prod.id,
+                "id_sucursal": suc.id,
+                "cantidad": 10,
+                "tipo_movimiento": "ENTRADA",
+                "razon": "Compra",
+            }
+        )
+        _, dv = _venta_con_detalle(prod)
+        svc.crear_salida_por_venta(dv, prod, suc.id, 3)
+        with pytest.raises(ValueError, match="Stock insuficiente"):
+            svc.ajustar_salida_por_venta(dv, 5, sucursal_id=suc2.id)
 
     def test_ajustar_y_revertir_sin_detalle(self):
         prod = ProductoFactory()
         _, dv = _venta_con_detalle(prod)
-        svc = DetalleInventarioService()
+        svc = MovimientoInventarioService()
         assert svc.ajustar_salida_por_venta(dv, 5) is None
         assert svc.revertir_salida_por_venta(dv) is None
 
     def test_get_stock_service(self):
-        inv = InventarioFactory()
+        suc = SucursalFactory()
         prod = ProductoFactory()
-        svc = DetalleInventarioService()
-        assert svc.get_stock(prod.id, inv.id) == 0
+        svc = MovimientoInventarioService()
+        assert svc.get_stock(prod.id, suc.id) == 0
         svc.create(
             {
                 "id_producto": prod.id,
-                "id_inventario": inv.id,
+                "id_sucursal": suc.id,
                 "cantidad": 6,
                 "tipo_movimiento": "ENTRADA",
                 "razon": "Compra",
             }
         )
-        assert svc.get_stock(prod.id, inv.id) == 6
+        assert svc.get_stock(prod.id, suc.id) == 6
+
+    def test_crear_salida_por_venta_sin_stock(self):
+        suc = SucursalFactory()
+        prod = ProductoFactory()
+        _, dv = _venta_con_detalle(prod)
+        with pytest.raises(ValueError, match="Stock insuficiente"):
+            MovimientoInventarioService().crear_salida_por_venta(
+                dv, prod, suc.id, 1
+            )
 
     def test_get_inventario_por_sucursal_vacio(self):
         suc = SucursalFactory()
-        assert DetalleInventarioService().get_inventario_por_sucursal(suc.id) == []
+        data = MovimientoInventarioService().get_inventario_por_sucursal(suc.id)
+        assert data == {"id_sucursal": suc.id, "detalles": []}
 
     def test_get_inventario_sin_precio_sucursal(self):
         suc = SucursalFactory()
-        inv = InventarioFactory(id_sucursal=suc)
         prod = ProductoFactory()
-        DetalleInventarioService().create(
+        MovimientoInventarioService().create(
             {
                 "id_producto": prod.id,
-                "id_inventario": inv.id,
+                "id_sucursal": suc.id,
                 "cantidad": 2,
                 "tipo_movimiento": "ENTRADA",
                 "razon": "Compra",
             }
         )
-        data = DetalleInventarioService().get_inventario_por_sucursal(suc.id)
-        assert data[0]["detalles"][0]["precio_sucursal"] is None
-        assert data[0]["detalles"][0]["vigente_desde"] is None
+        data = MovimientoInventarioService().get_inventario_por_sucursal(suc.id)
+        assert data["detalles"][0]["precio_sucursal"] is None
+        assert data["detalles"][0]["vigente_desde"] is None
 
 
 # ---------------------------------------------------------------------------
-# DetalleInventarioService: bulk_create formatos
+# MovimientoInventarioService: bulk_create formatos
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
 class TestDetalleBulkFormatos:
     def test_lista_plana(self):
-        inv = InventarioFactory()
+        suc = SucursalFactory()
         p1 = ProductoFactory()
         p2 = ProductoFactory()
-        res = DetalleInventarioService().bulk_create(
+        res = MovimientoInventarioService().bulk_create(
             [
                 {
                     "id_producto": p1.id,
-                    "id_inventario": inv.id,
+                    "id_sucursal": suc.id,
                     "cantidad": 2,
                     "tipo_movimiento": "ENTRADA",
                     "razon": "Carga",
                 },
                 {
                     "id_producto": p2.id,
-                    "id_inventario": inv.id,
+                    "id_sucursal": suc.id,
                     "cantidad": 3,
                     "tipo_movimiento": "ENTRADA",
                     "razon": "Carga",
@@ -484,23 +510,23 @@ class TestDetalleBulkFormatos:
         assert len(res) == 2
 
     def test_dict_unico(self):
-        inv = InventarioFactory()
+        suc = SucursalFactory()
         prod = ProductoFactory()
-        res = DetalleInventarioService().bulk_create(
+        res = MovimientoInventarioService().bulk_create(
             {
                 "id_producto": prod.id,
-                "id_inventario": inv.id,
+                "id_sucursal": suc.id,
                 "cantidad": 4,
             }
         )
         assert len(res) == 1
 
     def test_alias_detalles(self):
-        inv = InventarioFactory()
+        suc = SucursalFactory()
         prod = ProductoFactory()
-        res = DetalleInventarioService().bulk_create(
+        res = MovimientoInventarioService().bulk_create(
             {
-                "id_inventario": inv.id,
+                "id_sucursal": suc.id,
                 "tipo_movimiento": "ENTRADA",
                 "razon": "Carga",
                 "detalles": [{"id_producto": prod.id, "cantidad": 5}],
@@ -510,22 +536,22 @@ class TestDetalleBulkFormatos:
 
     def test_formato_invalido(self):
         with pytest.raises(ValueError, match="bulk inválido"):
-            DetalleInventarioService().bulk_create("no-es-lista-ni-dict")
+            MovimientoInventarioService().bulk_create("no-es-lista-ni-dict")
 
     def test_item_no_dict(self):
-        inv = InventarioFactory()
+        suc = SucursalFactory()
         with pytest.raises(ValueError, match="debe ser un objeto"):
-            DetalleInventarioService().bulk_create(
-                {"id_inventario": inv.id, "items": ["texto"]}
+            MovimientoInventarioService().bulk_create(
+                {"id_sucursal": suc.id, "items": ["texto"]}
             )
 
     def test_proveedor_invalido(self):
-        inv = InventarioFactory()
+        suc = SucursalFactory()
         prod = ProductoFactory()
         with pytest.raises(ValueError, match="proveedor"):
-            DetalleInventarioService().bulk_create(
+            MovimientoInventarioService().bulk_create(
                 {
-                    "id_inventario": inv.id,
+                    "id_sucursal": suc.id,
                     "tipo_movimiento": "ENTRADA",
                     "items": [
                         {
@@ -538,37 +564,25 @@ class TestDetalleBulkFormatos:
             )
 
     def test_salida_sin_stock(self):
-        inv = InventarioFactory()
+        suc = SucursalFactory()
         prod = ProductoFactory()
         with pytest.raises(ValueError, match="Stock insuficiente"):
-            DetalleInventarioService().bulk_create(
+            MovimientoInventarioService().bulk_create(
                 {
-                    "id_inventario": inv.id,
+                    "id_sucursal": suc.id,
                     "tipo_movimiento": "SALIDA",
                     "razon": "Venta",
                     "items": [{"id_producto": prod.id, "cantidad": 9}],
                 }
             )
 
-    def test_movimiento_comun_inexistente(self):
-        inv = InventarioFactory()
-        prod = ProductoFactory()
-        with pytest.raises(ValueError, match="movimiento"):
-            DetalleInventarioService().bulk_create(
-                {
-                    "id_inventario": inv.id,
-                    "id_movimiento": 99999,
-                    "items": [{"id_producto": prod.id, "cantidad": 1}],
-                }
-            )
-
     def test_bulk_tipo_invalido_por_item(self):
-        inv = InventarioFactory()
+        suc = SucursalFactory()
         prod = ProductoFactory()
         with pytest.raises(ValueError, match="ENTRADA o SALIDA"):
-            DetalleInventarioService().bulk_create(
+            MovimientoInventarioService().bulk_create(
                 {
-                    "id_inventario": inv.id,
+                    "id_sucursal": suc.id,
                     "items": [
                         {
                             "id_producto": prod.id,
@@ -579,15 +593,18 @@ class TestDetalleBulkFormatos:
                 }
             )
 
-    def test_bulk_con_movimiento_comun(self):
-        inv = InventarioFactory()
+
+@pytest.mark.django_db
+class TestDetalleBulkRamas:
+    def test_bulk_un_movimiento_por_linea(self):
+        suc = SucursalFactory()
         p1 = ProductoFactory()
         p2 = ProductoFactory()
-        mov = MovimientoEntradaFactory()
-        res = DetalleInventarioService().bulk_create(
+        res = MovimientoInventarioService().bulk_create(
             {
-                "id_inventario": inv.id,
-                "id_movimiento": mov.id,
+                "id_sucursal": suc.id,
+                "tipo_movimiento": "ENTRADA",
+                "razon": "Carga",
                 "items": [
                     {"id_producto": p1.id, "cantidad": 2},
                     {"id_producto": p2.id, "cantidad": 3},
@@ -595,7 +612,55 @@ class TestDetalleBulkFormatos:
             }
         )
         assert len(res) == 2
-        assert all(r["id_movimiento"] == mov.id for r in res)
+        movs = {r["id"] for r in res}
+        assert len(movs) == 2
+        for mov_id, expected in zip(sorted(movs), (2, 3)):
+            mov = MovimientoInventario.objects.get(id=mov_id)
+            assert mov.cantidad == expected
+            assert mov.razon == "Carga"
+            assert mov.id_sucursal_id == suc.id
+
+    def test_bulk_sucursales_por_linea(self):
+        suc1 = SucursalFactory()
+        suc2 = SucursalFactory()
+        p1 = ProductoFactory()
+        p2 = ProductoFactory()
+        res = MovimientoInventarioService().bulk_create(
+            [
+                {
+                    "id_producto": p1.id,
+                    "id_sucursal": suc1.id,
+                    "cantidad": 2,
+                    "tipo_movimiento": "ENTRADA",
+                },
+                {
+                    "id_producto": p2.id,
+                    "id_sucursal": suc2.id,
+                    "cantidad": 3,
+                    "tipo_movimiento": "ENTRADA",
+                },
+            ]
+        )
+        assert res[0]["id_sucursal"] == suc1.id
+        assert res[1]["id_sucursal"] == suc2.id
+
+    def test_bulk_proveedor_comun(self):
+        suc = SucursalFactory()
+        p1 = ProductoFactory()
+        p2 = ProductoFactory()
+        prov = ProveedorFactory()
+        res = MovimientoInventarioService().bulk_create(
+            {
+                "id_sucursal": suc.id,
+                "id_proveedor": prov.id,
+                "tipo_movimiento": "ENTRADA",
+                "items": [
+                    {"id_producto": p1.id, "cantidad": 1},
+                    {"id_producto": p2.id, "cantidad": 2},
+                ],
+            }
+        )
+        assert all(r["id_proveedor"] == prov.id for r in res)
 
 
 # ---------------------------------------------------------------------------
@@ -753,51 +818,41 @@ class TestPrecioSucursalExtra:
 
 @pytest.mark.django_db
 class TestRepositoriesExtra:
-    def test_detalle_get_stock_con_y_sin_inventario(self):
-        inv1 = InventarioFactory()
-        inv2 = InventarioFactory()
+    def test_stock_repo_por_sucursal(self):
+        suc1 = SucursalFactory()
+        suc2 = SucursalFactory()
         prod = ProductoFactory()
-        svc = DetalleInventarioService()
-        for inv, cant in ((inv1, 4), (inv2, 6)):
+        svc = MovimientoInventarioService()
+        for suc, cant in ((suc1, 4), (suc2, 6)):
             svc.create(
                 {
                     "id_producto": prod.id,
-                    "id_inventario": inv.id,
+                    "id_sucursal": suc.id,
                     "cantidad": cant,
                     "tipo_movimiento": "ENTRADA",
                     "razon": "Compra",
                 }
             )
-        repo = DetalleInventarioRepository()
-        assert repo.get_stock(prod.id, inv1.id) == 4
-        assert repo.get_stock(prod.id) == 10
-        assert repo.get_stock(99999) == 0
-
-    def test_get_by_detalle_venta_none_y_found(self):
-        repo = DetalleInventarioRepository()
-        assert repo.get_by_detalle_venta(99999) is None
-        inv = InventarioFactory()
-        prod = ProductoFactory()
-        _, dv = _venta_con_detalle(prod)
-        DetalleInventarioService().crear_salida_por_venta(dv, prod, inv, 2)
-        assert repo.get_by_detalle_venta(dv.id) is not None
+        repo = StockRepository()
+        assert repo.get_stock(prod.id, suc1.id) == 4
+        assert repo.get_stock(prod.id, suc2.id) == 6
+        assert repo.get_stock(prod.id, 99999) == 0
 
     def test_get_stock_map(self):
         suc = SucursalFactory()
-        inv = InventarioFactory(id_sucursal=suc)
         prod = ProductoFactory()
         prod2 = ProductoFactory()
-        svc = DetalleInventarioService()
+        svc = MovimientoInventarioService()
         svc.create(
             {
                 "id_producto": prod.id,
-                "id_inventario": inv.id,
+                "id_sucursal": suc.id,
                 "cantidad": 5,
                 "tipo_movimiento": "ENTRADA",
                 "razon": "Compra",
             }
         )
-        repo = DetalleInventarioRepository()
+        repo = StockRepository()
         assert repo.get_stock_map_por_sucursal(suc.id) == {prod.id: 5}
         # producto sin movimientos no aparece
         assert prod2.id not in repo.get_stock_map_por_sucursal(suc.id)
@@ -831,19 +886,14 @@ class TestRepositoriesExtra:
 @pytest.mark.django_db
 class TestModelsStr:
     def test_str(self):
-        inv = InventarioFactory(descripcion="Bodega")
-        assert "Bodega" in str(inv)
-        mov = MovimientoEntradaFactory()
-        assert "ENTRADA" in str(mov)
-        prod = ProductoFactory()
-        det = DetalleInventario.objects.create(
-            id_producto=prod,
-            id_inventario=inv,
-            id_movimiento=mov,
-            cantidad=3,
-        )
-        assert "3" in str(det)
+        from tests.factories import MovimientoEntradaFactory
+
         suc = SucursalFactory()
+        prod = ProductoFactory()
+        mov = MovimientoEntradaFactory(cantidad=3, id_producto=prod, id_sucursal=suc)
+        assert "ENTRADA" in str(mov)
+        st = Stock.objects.create(id_producto=prod, id_sucursal=suc, cantidad=3)
+        assert "3" in str(st)
         ps = PrecioSucursal.objects.create(
             id_producto=prod, id_sucursal=suc, precio_venta=Decimal("9.99")
         )
@@ -857,61 +907,88 @@ class TestModelsStr:
 
 @pytest.mark.django_db
 class TestInventarioControllers:
-    def test_list_create_detail(self, auth_client, perfil):
-        perfil.rol = "admin"
-        perfil.save(update_fields=["rol"])
-        own = perfil.id_sucursal_id
-        r = auth_client.post(
-            "/api/inventarios/",
-            {"id_sucursal": own, "descripcion": "Norte"},
-            format="json",
-        )
-        assert r.status_code == 201, r.content
-        inv_id = r.data["id"]
-
-        r = auth_client.get("/api/inventarios/")
-        assert r.status_code == 200
-        assert any(i["id"] == inv_id for i in r.data)
-
-        r = auth_client.get(f"/api/inventarios/{inv_id}/")
-        assert r.status_code == 200
-
-        r = auth_client.get("/api/inventarios/99999/")
-        assert r.status_code == 404
-
-    def test_create_sin_sucursal_usa_propia(self, auth_client, perfil):
-        perfil.rol = "admin"
-        perfil.save(update_fields=["rol"])
-        r = auth_client.post(
-            "/api/inventarios/", {"descripcion": "Propio"}, format="json"
-        )
-        assert r.status_code == 201, r.content
-        assert r.data["id_sucursal"] == perfil.id_sucursal_id
-
     def test_movimiento_list_create_detail(self, auth_client, perfil):
         perfil.rol = "encargado"
         perfil.save(update_fields=["rol"])
+        prod = ProductoFactory()
         r = auth_client.post(
             "/api/movimientos-inventario/",
-            {"tipo": "ENTRADA", "cantidad": 5, "razon": "Compra"},
+            {
+                "id_producto": prod.id,
+                "id_sucursal": perfil.id_sucursal_id,
+                "tipo": "ENTRADA",
+                "cantidad": 5,
+                "razon": "Compra",
+            },
             format="json",
         )
         assert r.status_code == 201, r.content
+        assert r.data["id_usuario"] == perfil.usuario_id
         mid = r.data["id"]
         assert auth_client.get("/api/movimientos-inventario/").status_code == 200
         assert auth_client.get(f"/api/movimientos-inventario/{mid}/").status_code == 200
         assert auth_client.get("/api/movimientos-inventario/99999/").status_code == 404
 
+    def test_movimiento_put_delete_y_errores(self, auth_client, perfil):
+        perfil.rol = "encargado"
+        perfil.save(update_fields=["rol"])
+        prod = ProductoFactory()
+        m = MovimientoInventarioService().create(
+            {
+                "id_producto": prod.id,
+                "id_sucursal": perfil.id_sucursal_id,
+                "cantidad": 5,
+                "tipo_movimiento": "ENTRADA",
+                "razon": "Compra",
+            }
+        )
+        r = auth_client.put(
+            f"/api/movimientos-inventario/{m['id']}/",
+            {"cantidad": 4},
+            format="json",
+        )
+        assert r.status_code == 200
+        assert r.data["cantidad"] == 4
+        assert (
+            auth_client.put(
+                "/api/movimientos-inventario/99999/", {"cantidad": 4}, format="json"
+            ).status_code
+            == 404
+        )
+        assert (
+            auth_client.put(
+                f"/api/movimientos-inventario/{m['id']}/",
+                {"cantidad": -1},
+                format="json",
+            ).status_code
+            == 400
+        )
+        assert (
+            auth_client.delete(f"/api/movimientos-inventario/{m['id']}/").status_code
+            == 200
+        )
+        assert (
+            auth_client.delete("/api/movimientos-inventario/99999/").status_code == 404
+        )
+
+    def test_movimiento_post_invalido_400(self, auth_client, perfil):
+        perfil.rol = "encargado"
+        perfil.save(update_fields=["rol"])
+        r = auth_client.post(
+            "/api/movimientos-inventario/", {"id_producto": 1}, format="json"
+        )
+        assert r.status_code == 400
+
     def test_detalle_list_create_detail_bulk(self, auth_client, perfil):
         perfil.rol = "encargado"
         perfil.save(update_fields=["rol"])
-        inv = InventarioFactory(id_sucursal=perfil.id_sucursal)
+        suc_id = perfil.id_sucursal_id
         prod = ProductoFactory()
         r = auth_client.post(
             "/api/detalles-inventario/",
             {
                 "id_producto": prod.id,
-                "id_inventario": inv.id,
+                "id_sucursal": suc_id,
                 "cantidad": 3,
                 "tipo_movimiento": "ENTRADA",
                 "razon": "Compra",
@@ -929,7 +1006,7 @@ class TestInventarioControllers:
         r = auth_client.post(
             "/api/detalles-inventario/bulk/",
             {
-                "id_inventario": inv.id,
+                "id_sucursal": suc_id,
                 "tipo_movimiento": "ENTRADA",
                 "items": [{"id_producto": p2.id, "cantidad": 2}],
             },
@@ -939,10 +1016,31 @@ class TestInventarioControllers:
 
         r = auth_client.post(
             "/api/detalles-inventario/bulk/",
-            {"id_inventario": inv.id, "items": []},
+            {"id_sucursal": suc_id, "items": []},
             format="json",
         )
         assert r.status_code == 400
+
+    def test_stock_list_staff_con_filtro(self, auth_client):
+        u = User.objects.create_user(username="staffer", password="x", is_staff=True)
+        auth_client.force_authenticate(user=u)
+        r = auth_client.get("/api/stock/")
+        assert r.status_code == 200
+        r = auth_client.get("/api/stock/?sucursal_id=no-num")
+        assert r.status_code == 400
+
+    def test_stock_list_no_staff_forzada_propia(self, auth_client, perfil):
+        r = auth_client.get("/api/stock/")
+        assert r.status_code == 200
+        r = auth_client.get("/api/stock/?sucursal_id=1")
+        assert r.status_code == 200
+
+    def test_stock_list_sin_sucursal_400(self, api_client):
+        u = User.objects.create_user(username="sinsucursal", password="x")
+        api_client.force_authenticate(user=u)
+        r = api_client.get("/api/stock/")
+        assert r.status_code == 400
+        assert "error" in r.data
 
     def test_mi_sucursal_sin_perfil_400(self, api_client):
         u = User.objects.create_user(username="sinperfil", password="x")
@@ -951,16 +1049,13 @@ class TestInventarioControllers:
         assert r.status_code == 400
 
     def test_mi_sucursal_ok(self, auth_client, perfil):
-        from inventario.models import Inventario as Inv
-
         assert perfil.id_sucursal_id is not None
-        assert Inv.objects.filter(id_sucursal_id=perfil.id_sucursal_id).exists() or True
         r = auth_client.get("/api/inventarios/mi-sucursal/")
         assert r.status_code == 200
+        assert r.data["id_sucursal"] == perfil.id_sucursal_id
 
     def test_mi_sucursal_page_invalido(self, auth_client):
         r = auth_client.get("/api/inventarios/mi-sucursal/?page=no-num")
-        # 200 sin datos (sin page válida no pagina) o 400 si hay datos y page inválido
         assert r.status_code in (200, 400)
 
 
@@ -1028,4 +1123,180 @@ class TestPrecioControllers:
         r = auth_client.get(
             "/api/precios-sucursal/historial/?id_producto=x&id_sucursal=y"
         )
+        assert r.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# Casos límite y ramas sin cubrir (matriz de cobertura inventario)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestDetalleCasosLimite:
+    def test_create_cantidad_cero_entrada(self):
+        suc = SucursalFactory()
+        prod = ProductoFactory()
+        svc = MovimientoInventarioService()
+        res = svc.create(
+            {
+                "id_producto": prod.id,
+                "id_sucursal": suc.id,
+                "cantidad": 0,
+                "tipo_movimiento": "ENTRADA",
+            }
+        )
+        assert res["cantidad"] == 0
+        assert svc.get_stock(prod.id, suc.id) == 0
+
+    def test_create_cantidad_cero_salida_con_stock_cero(self):
+        # stock 0 y salida 0: 0 >= 0, no lanza
+        suc = SucursalFactory()
+        prod = ProductoFactory()
+        svc = MovimientoInventarioService()
+        res = svc.create(
+            {
+                "id_producto": prod.id,
+                "id_sucursal": suc.id,
+                "cantidad": 0,
+                "tipo_movimiento": "SALIDA",
+            }
+        )
+        assert res["cantidad"] == 0
+        assert svc.get_stock(prod.id, suc.id) == 0
+
+    def _dos_entradas(self, cant_a=5, cant_b=4):
+        suc = SucursalFactory()
+        prod = ProductoFactory()
+        svc = MovimientoInventarioService()
+        det_a = svc.create(
+            {
+                "id_producto": prod.id,
+                "id_sucursal": suc.id,
+                "cantidad": cant_a,
+                "tipo_movimiento": "ENTRADA",
+                "razon": "Compra",
+            }
+        )
+        det_b = svc.create(
+            {
+                "id_producto": prod.id,
+                "id_sucursal": suc.id,
+                "cantidad": cant_b,
+                "tipo_movimiento": "ENTRADA",
+                "razon": "Compra",
+            }
+        )
+        return svc, det_a, det_b, suc, prod
+
+    def test_update_transicion_entrada_a_salida_con_stock(self):
+        svc, det_a, det_b, suc, prod = self._dos_entradas(5, 4)
+        # stock 9; la entrada B (4) se convierte en salida 3
+        svc.update(det_b["id"], {"tipo_movimiento": "SALIDA", "cantidad": 3})
+        assert svc.get_stock(prod.id, suc.id) == 2  # 5 - 3
+
+    def test_update_transicion_entrada_a_salida_sin_stock(self):
+        svc, det_a, det_b, suc, prod = self._dos_entradas(5, 1)
+        # stock 6; quitar la entrada B deja 5; salida 20 excede
+        with pytest.raises(ValueError, match="Stock insuficiente"):
+            svc.update(det_b["id"], {"tipo_movimiento": "SALIDA", "cantidad": 20})
+
+    def test_get_inventario_por_sucursal_entrada_menos_salida(self):
+        suc = SucursalFactory()
+        prod = ProductoFactory()
+        svc = MovimientoInventarioService()
+        svc.create(
+            {
+                "id_producto": prod.id,
+                "id_sucursal": suc.id,
+                "cantidad": 10,
+                "tipo_movimiento": "ENTRADA",
+                "razon": "Compra",
+            }
+        )
+        svc.create(
+            {
+                "id_producto": prod.id,
+                "id_sucursal": suc.id,
+                "cantidad": 3,
+                "tipo_movimiento": "SALIDA",
+                "razon": "Venta",
+            }
+        )
+        data = svc.get_inventario_por_sucursal(suc.id)
+        assert data["detalles"][0]["cantidad"] == 7
+
+
+@pytest.mark.django_db
+class TestPrecioRamas:
+    def test_create_activo_false_no_desactiva_anterior(self):
+        prod = ProductoFactory()
+        suc = SucursalFactory()
+        svc = PrecioSucursalService()
+        primero = svc.create(
+            {"id_producto": prod.id, "id_sucursal": suc.id, "precio_venta": "10.00"}
+        )
+        svc.create(
+            {
+                "id_producto": prod.id,
+                "id_sucursal": suc.id,
+                "precio_venta": "20.00",
+                "activo": False,
+            }
+        )
+        assert PrecioSucursal.objects.get(id=primero["id"]).activo is True
+        assert svc.get_precio_activo(prod.id, suc.id)["id"] == primero["id"]
+
+    def test_resolver_instance_con_precio_activo(self):
+        prod = ProductoFactory(precio_venta=Decimal("50.00"))
+        suc = SucursalFactory()
+        PrecioSucursalService().create(
+            {"id_producto": prod.id, "id_sucursal": suc.id, "precio_venta": "77.00"}
+        )
+        assert PrecioSucursalService.resolver_precio_venta(
+            prod, suc.id
+        ) == Decimal("77.00")
+
+
+@pytest.mark.django_db
+class TestMiSucursalPaginacion:
+    def _sembrar_detalles(self, sucursal, n=3):
+        svc = MovimientoInventarioService()
+        for i in range(n):
+            svc.create(
+                {
+                    "id_producto": ProductoFactory().id,
+                    "id_sucursal": sucursal.id,
+                    "cantidad": i + 1,
+                    "tipo_movimiento": "ENTRADA",
+                    "razon": "Compra",
+                }
+            )
+        return sucursal
+
+    def test_page_valido_con_datos(self, auth_client, perfil):
+        self._sembrar_detalles(perfil.id_sucursal, 3)
+        r = auth_client.get("/api/inventarios/mi-sucursal/?page=1&page_size=2")
+        assert r.status_code == 200
+        assert r.data["total"] == 3
+        assert r.data["page"] == 1
+        assert r.data["page_size"] == 2
+        assert r.data["total_pages"] == 2
+        assert len(r.data["detalles"]) == 2
+
+    def test_page_fuera_de_rango(self, auth_client, perfil):
+        self._sembrar_detalles(perfil.id_sucursal, 2)
+        r = auth_client.get("/api/inventarios/mi-sucursal/?page=5&page_size=2")
+        assert r.status_code == 400
+        assert "fuera de rango" in r.data["error"]
+
+    def test_page_cero_y_page_size_cero(self, auth_client, perfil):
+        self._sembrar_detalles(perfil.id_sucursal, 1)
+        r = auth_client.get("/api/inventarios/mi-sucursal/?page=0")
+        assert r.status_code == 400
+        r = auth_client.get("/api/inventarios/mi-sucursal/?page=1&page_size=0")
+        assert r.status_code == 400
+
+    def test_page_no_entero_con_datos(self, auth_client, perfil):
+        self._sembrar_detalles(perfil.id_sucursal, 1)
+        r = auth_client.get("/api/inventarios/mi-sucursal/?page=abc")
         assert r.status_code == 400

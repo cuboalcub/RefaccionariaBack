@@ -13,39 +13,33 @@ from repository.permissions import (
     sucursal_de_usuario,
 )
 
-from inventario.models import Inventario
-from inventario.services.detalle_inventario_service import DetalleInventarioService
+from inventario.services.movimiento_inventario_service import MovimientoInventarioService
 
 PERM_INVENTARIO_ESCRIBIR = "inventario.escribir"
+MSG_SIN_SUCURSAL = "El usuario no tiene una sucursal asignada"
 
 
-def _sucursal_de_inventario(inventario_id):
-    """Sucursal del inventario o None si no existe."""
-    inv = Inventario.objects.filter(id=inventario_id).first()
-    return inv.id_sucursal_id if inv else None
-
-
-def _inventarios_en_bulk(data):
-    """Ids de inventario mencionados en un payload bulk (común + por línea)."""
+def _sucursales_en_bulk(data):
+    """Ids de sucursal mencionados en un payload bulk (común + por línea)."""
     if isinstance(data, list):
         items, comun = data, None
     elif isinstance(data, dict):
         items = data.get("items") or data.get("detalles") or []
-        comun = data.get("id_inventario")
+        comun = data.get("id_sucursal")
     else:
         return set()
     ids = set()
     if comun is not None:
         ids.add(comun)
     for it in items:
-        if isinstance(it, dict) and it.get("id_inventario") is not None:
-            ids.add(it["id_inventario"])
+        if isinstance(it, dict) and it.get("id_sucursal") is not None:
+            ids.add(it["id_sucursal"])
     return ids
 
 
 class DetalleInventarioListCreateView(BaseListController):
     def __init__(self):
-        super().__init__(DetalleInventarioService)
+        super().__init__(MovimientoInventarioService)
 
     def get(self, request) -> Response:
         exigir_permiso(request.user, "inventario.ver")
@@ -54,16 +48,11 @@ class DetalleInventarioListCreateView(BaseListController):
         user_suc = sucursal_de_usuario(request.user)
         if user_suc is None:
             return Response(
-                {"error": "El usuario no tiene una sucursal asignada"},
+                {"error": MSG_SIN_SUCURSAL},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        inv_ids = list(
-            Inventario.objects.filter(id_sucursal_id=user_suc).values_list(
-                "id", flat=True
-            )
-        )
         return Response(
-            self.service.get_by_filters({"id_inventario_id__in": inv_ids}),
+            self.service.get_by_filters({"id_sucursal_id": user_suc}),
             status=status.HTTP_200_OK,
         )
 
@@ -71,18 +60,19 @@ class DetalleInventarioListCreateView(BaseListController):
         try:
             exigir_permiso(request.user, PERM_INVENTARIO_ESCRIBIR)
             data = dict(request.data)
-            if not es_staff(request.user) and data.get("id_inventario") is not None:
-                inv_id = entero_o_none(data.get("id_inventario"))
-                if inv_id is None:
-                    return Response(
-                        {"error": "id_inventario debe ser entero"},
-                        status=status.HTTP_400_BAD_REQUEST,
-                    )
+            if not es_staff(request.user):
+                if data.get("id_sucursal") is not None:
+                    suc_id = entero_o_none(data.get("id_sucursal"))
+                    if suc_id is None:
+                        return Response(
+                            {"error": "id_sucursal debe ser entero"},
+                            status=status.HTTP_400_BAD_REQUEST,
+                        )
+                    data["id_sucursal"] = suc_id
                 exigir_misma_sucursal(
-                    request.user, _sucursal_de_inventario(inv_id), "inventario"
+                    request.user, data.get("id_sucursal"), "inventario"
                 )
-                data["id_inventario"] = inv_id
-            item = self.service.create(data)
+            item = self.service.create(data, user=request.user)
             return Response(item, status=status.HTTP_201_CREATED)
         except ValueError as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
@@ -90,13 +80,13 @@ class DetalleInventarioListCreateView(BaseListController):
 
 class DetalleInventarioDetailView(BaseDetailController):
     def __init__(self):
-        super().__init__(DetalleInventarioService)
+        super().__init__(MovimientoInventarioService)
 
     def _check_sucursal(self, request, pk):
         item = self.service.get_by_id(pk)
         exigir_misma_sucursal(
             request.user,
-            _sucursal_de_inventario(item.get("id_inventario")),
+            item.get("id_sucursal"),
             "detalle de inventario",
         )
 
@@ -123,8 +113,8 @@ class DetalleInventarioDetailView(BaseDetailController):
         try:
             data = dict(request.data)
             if not es_staff(request.user):
-                # No mover detalles entre inventarios.
-                data.pop("id_inventario", None)
+                # No mover movimientos entre sucursales.
+                data.pop("id_sucursal", None)
             item = self.service.update(pk, data)
             return Response(item, status=status.HTTP_200_OK)
         except ValueError as e:
@@ -144,22 +134,19 @@ class DetalleInventarioBulkCreateView(APIView):
     def post(self, request):
         try:
             exigir_permiso(request.user, PERM_INVENTARIO_ESCRIBIR)
-            service = DetalleInventarioService()
-            # Soporta lista plana o dict con items/detalles
+            service = MovimientoInventarioService()
             data = request.data
             if not es_staff(request.user):
-                # Validación línea por línea vía inventarios mencionados.
-                for inv_id in _inventarios_en_bulk(data):
-                    ent = entero_o_none(inv_id)
+                # Validación línea por línea vía sucursales mencionadas.
+                for suc_id in _sucursales_en_bulk(data):
+                    ent = entero_o_none(suc_id)
                     if ent is None:
                         return Response(
-                            {"error": "id_inventario debe ser entero"},
+                            {"error": "id_sucursal debe ser entero"},
                             status=status.HTTP_400_BAD_REQUEST,
                         )
-                    exigir_misma_sucursal(
-                        request.user, _sucursal_de_inventario(ent), "inventario"
-                    )
-            resultados = service.bulk_create(data)
+                    exigir_misma_sucursal(request.user, ent, "inventario")
+            resultados = service.bulk_create(data, user=request.user)
             return Response(resultados, status=status.HTTP_201_CREATED)
         except ValueError as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)

@@ -1,4 +1,4 @@
-"""Fixtures globales pytest-django: user, JWT/API clients, sucursal/inventario base."""
+"""Fixtures globales pytest-django: user, JWT/API clients, sucursal base."""
 
 import pytest
 from django.contrib.auth.models import User
@@ -6,7 +6,6 @@ from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from sucursales.models import Sucursal
-from inventario.models import Inventario
 from usuario.models import Perfil
 
 
@@ -33,14 +32,7 @@ def sucursal_b(db):
 
 
 @pytest.fixture
-def inventario(db, sucursal):
-    return Inventario.objects.create(
-        id_sucursal=sucursal, descripcion="Inventario principal"
-    )
-
-
-@pytest.fixture
-def perfil(db, user, sucursal, inventario):
+def perfil(db, user, sucursal):
     """Perfil vincula user -> sucursal (base para resolución JWT)."""
     return Perfil.objects.create(usuario=user, id_sucursal=sucursal)
 

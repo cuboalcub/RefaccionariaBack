@@ -6,12 +6,11 @@ import pytest
 from decimal import Decimal
 from rest_framework.test import APIClient
 
-from inventario.services.detalle_inventario_service import DetalleInventarioService
+from inventario.services.movimiento_inventario_service import MovimientoInventarioService
 from ventas.models import Venta
 from ventas.services.detalle_venta_service import DetalleVentaService
 from ventas.services.venta_service import VentaService
 from tests.factories import (
-    InventarioFactory,
     MetodoPagoFactory,
     ProductoFactory,
     SucursalFactory,
@@ -22,12 +21,12 @@ from usuario.models import Perfil
 
 def _ctx(cantidad_entrada=10, precio=Decimal("100.00"), rol="cajero"):
     suc = SucursalFactory()
-    inv = InventarioFactory(id_sucursal=suc)
+    inv = suc
     prod = ProductoFactory(precio_venta=precio)
-    DetalleInventarioService().create(
+    MovimientoInventarioService().create(
         {
             "id_producto": prod.id,
-            "id_inventario": inv.id,
+            "id_sucursal": inv.id,
             "cantidad": cantidad_entrada,
             "tipo_movimiento": "ENTRADA",
             "razon": "Compra",
@@ -37,7 +36,7 @@ def _ctx(cantidad_entrada=10, precio=Decimal("100.00"), rol="cajero"):
     Perfil.objects.create(usuario=u, id_sucursal=suc, rol=rol)
     mp = MetodoPagoFactory()
     v = VentaService().create(
-        {"id_usuario": u.id, "id_inventario": inv.id, "id_metodo_pago": mp.id}
+        {"id_usuario": u.id, "id_sucursal": inv.id, "id_metodo_pago": mp.id}
     )
     return suc, inv, prod, u, mp, v
 
@@ -96,7 +95,7 @@ class TestCantidadLegacy:
                 {"id_producto": prod.id, "id_venta": v["id"], "cantidad": 0},
                 user=u,
             )
-        assert DetalleInventarioService().get_stock(prod.id, inv.id) == 10
+        assert MovimientoInventarioService().get_stock(prod.id, inv.id) == 10
 
     def test_update_cantidad_cero_falla(self):
         _, _, prod, u, _, v = _ctx()
@@ -149,7 +148,7 @@ class TestPutVentaBlindado:
 
     def test_update_con_instancia_metodo_pago(self):
         _, _, _, u, mp, v = _ctx()
-        res = VentaService().update(v["id"], {"id_metodo_pago": mp, "total": "5.00"})
+        VentaService().update(v["id"], {"id_metodo_pago": mp, "total": "5.00"})
         assert Venta.objects.get(id=v["id"]).id_metodo_pago_id == mp.id
         assert Venta.objects.get(id=v["id"]).total == Decimal("0.00")
 
@@ -165,7 +164,7 @@ class TestScopingVentaDetalle:
     def _dos_sucursales(self):
         suc_a, inv_a, prod_a, u_a, mp_a, v_a = _ctx()
         suc_b = SucursalFactory()
-        inv_b = InventarioFactory(id_sucursal=suc_b)
+        inv_b = suc_b
         u_b = UserFactory()
         Perfil.objects.create(usuario=u_b, id_sucursal=suc_b)
         d_a = DetalleVentaService().create(

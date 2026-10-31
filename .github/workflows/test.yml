@@ -1,25 +1,30 @@
-name: Django Test
+name: Tests
 
 on:
   pull_request:
     branches:
       - test
+    paths-ignore:
+      - 'docs/**'
+      - 'README.md'
+      - 'media/**'
+  push:
+    branches:
+      - test
+    paths-ignore:
+      - 'docs/**'
+      - 'README.md'
+      - 'media/**'
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
-
-    services:
-      postgres:
-        image: postgres:14
-        env:
-          POSTGRES_DB: mi_db
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: 1234
-          #sasasasa
-        ports:
-          - 5432:5432
-
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -29,20 +34,95 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Crear archivo .env
-        run: |
-          echo "DATABASE_URL=${{ secrets.DATABASE_URL }}" >> .env
-          echo "SECRET_KEY=${{ secrets.SECRET_KEY }}" >> .env
-          # Agrega más variables si tienes otras en tu .env
+      - name: Install ruff
+        run: pip install ruff==0.17.2
+
+      - name: Ruff check
+        run: ruff check . --select E9,F --exclude migrations
+
+  test:
+    name: Tests (Django)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    env:
+      DATABASE_URL: postgres://postgres:1234@localhost:5432/mi_db
+      SECRET_KEY: ci-only-dummy-key
+      DEBUG: 'True'
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: mi_db
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: 1234
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
 
       - name: Install dependencies
         run: |
+          python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run migrations
-        run: |
-          python manage.py migrate
+      - name: Run tests (incluye coverage)
+        run: pytest
 
-      - name: Run tests
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml
+          retention-days: 7
+
+  merge-to-develop:
+    name: Merge test -> Develop
+    needs: [lint, test]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    concurrency:
+      group: merge-develop
+      cancel-in-progress: false
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Merge into Develop
+        env:
+          MERGE_SHA: ${{ github.sha }}
         run: |
-          python manage.py test
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B Develop origin/Develop
+          for intento in 1 2 3; do
+            git merge --no-ff "$MERGE_SHA" -m "chore(ci): merge test en Develop tras pruebas verdes" \
+              || { echo "Conflicto al mergear test en Develop" >&2; exit 1; }
+            if git push origin Develop; then exit 0; fi
+            echo "Push rechazado (intento $intento); reintentando sobre origin/Develop"
+            git fetch origin Develop
+            git reset --hard origin/Develop
+          done
+          echo "No se pudo mergear test en Develop" >&2
+          exit 1

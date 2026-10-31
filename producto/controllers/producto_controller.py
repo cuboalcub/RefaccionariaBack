@@ -1,13 +1,11 @@
 from rest_framework import status
 from rest_framework.response import Response
-from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 from repository.base_controller import BaseListController
 from repository.base_controller import BaseDetailController
 
 from producto.services.producto_service import ProductoService
-from repository.base_controller import BaseDetailController, BaseListController
 from repository.permissions import exigir_permiso
 
 PERMISO_CATALOGOS_LEER = "catalogos.leer"

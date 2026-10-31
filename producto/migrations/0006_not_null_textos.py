@@ -2,6 +2,10 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
+    # Postgres rechaza ALTER TABLE con triggers de FK pendientes de la
+    # misma transacción cuando antes se hace UPDATE de esas filas.
+    atomic = False
+
     dependencies = [
         ("producto", "0005_merge_20261011_1415"),
     ]

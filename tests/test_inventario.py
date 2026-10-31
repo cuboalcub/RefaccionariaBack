@@ -1,46 +1,41 @@
-"""Tests inventario: DetalleInventario (stock/validaciones/bulk) + PrecioSucursal."""
+"""Tests inventario: Movimientos (stock/validaciones/bulk) + PrecioSucursal."""
 
 import pytest
 from decimal import Decimal
 
-from inventario.services.detalle_inventario_service import DetalleInventarioService
+from inventario.services.movimiento_inventario_service import MovimientoInventarioService
 from inventario.services.precio_sucursal_service import PrecioSucursalService
-from tests.factories import (
-    InventarioFactory,
-    ProductoFactory,
-    ProveedorFactory,
-    SucursalFactory,
-)
+from tests.factories import ProductoFactory, ProveedorFactory, SucursalFactory
 
 
 @pytest.mark.django_db
-class TestDetalleInventario:
+class TestMovimientoInventario:
     def test_entrada_aumenta_stock(self):
-        inv = InventarioFactory()
+        suc = SucursalFactory()
         prod = ProductoFactory()
-        svc = DetalleInventarioService()
+        svc = MovimientoInventarioService()
 
         svc.create(
             {
                 "id_producto": prod.id,
-                "id_inventario": inv.id,
+                "id_sucursal": suc.id,
                 "cantidad": 10,
                 "tipo_movimiento": "ENTRADA",
                 "razon": "Compra",
             }
         )
-        assert svc.get_stock(prod.id, inv.id) == 10
+        assert svc.get_stock(prod.id, suc.id) == 10
 
     def test_salida_sin_stock_falla(self):
-        inv = InventarioFactory()
+        suc = SucursalFactory()
         prod = ProductoFactory()
-        svc = DetalleInventarioService()
+        svc = MovimientoInventarioService()
 
         with pytest.raises(ValueError, match="Stock insuficiente"):
             svc.create(
                 {
                     "id_producto": prod.id,
-                    "id_inventario": inv.id,
+                    "id_sucursal": suc.id,
                     "cantidad": 5,
                     "tipo_movimiento": "SALIDA",
                     "razon": "Venta",
@@ -48,45 +43,45 @@ class TestDetalleInventario:
             )
 
     def test_cantidad_negativa_falla(self):
-        inv = InventarioFactory()
+        suc = SucursalFactory()
         prod = ProductoFactory()
-        svc = DetalleInventarioService()
+        svc = MovimientoInventarioService()
 
         with pytest.raises(ValueError, match="no puede ser negativa"):
             svc.create(
                 {
                     "id_producto": prod.id,
-                    "id_inventario": inv.id,
+                    "id_sucursal": suc.id,
                     "cantidad": -1,
                 }
             )
 
     def test_create_con_proveedor_opcional(self):
-        inv = InventarioFactory()
+        suc = SucursalFactory()
         prod = ProductoFactory()
         prov = ProveedorFactory()
-        svc = DetalleInventarioService()
+        svc = MovimientoInventarioService()
 
         res = svc.create(
             {
                 "id_producto": prod.id,
-                "id_inventario": inv.id,
+                "id_sucursal": suc.id,
                 "id_proveedor": prov.id,
                 "cantidad": 3,
             }
         )
         assert res["id_proveedor"] == prov.id
-        assert svc.get_stock(prod.id, inv.id) == 3
+        assert svc.get_stock(prod.id, suc.id) == 3
 
     def test_bulk_create_items(self):
-        inv = InventarioFactory()
+        suc = SucursalFactory()
         p1 = ProductoFactory()
         p2 = ProductoFactory()
-        svc = DetalleInventarioService()
+        svc = MovimientoInventarioService()
 
         res = svc.bulk_create(
             {
-                "id_inventario": inv.id,
+                "id_sucursal": suc.id,
                 "tipo_movimiento": "ENTRADA",
                 "razon": "Carga inicial",
                 "items": [
@@ -96,22 +91,21 @@ class TestDetalleInventario:
             }
         )
         assert len(res) == 2
-        assert svc.get_stock(p1.id, inv.id) == 5
-        assert svc.get_stock(p2.id, inv.id) == 7
+        assert svc.get_stock(p1.id, suc.id) == 5
+        assert svc.get_stock(p2.id, suc.id) == 7
 
     def test_bulk_vacio_falla(self):
-        svc = DetalleInventarioService()
+        svc = MovimientoInventarioService()
         with pytest.raises(ValueError, match="no puede estar vacía"):
-            svc.bulk_create({"id_inventario": 1, "items": []})
+            svc.bulk_create({"id_sucursal": 1, "items": []})
 
     def test_inventario_por_sucursal_enriquece_precio(self):
         suc = SucursalFactory()
-        inv = InventarioFactory(id_sucursal=suc)
         prod = ProductoFactory(precio_venta=Decimal("100.00"))
-        DetalleInventarioService().create(
+        MovimientoInventarioService().create(
             {
                 "id_producto": prod.id,
-                "id_inventario": inv.id,
+                "id_sucursal": suc.id,
                 "cantidad": 4,
                 "tipo_movimiento": "ENTRADA",
                 "razon": "Compra",
@@ -124,9 +118,8 @@ class TestDetalleInventario:
                 "precio_venta": "120.00",
             }
         )
-        data = DetalleInventarioService().get_inventario_por_sucursal(suc.id)
-        assert len(data) == 1
-        detalle = data[0]["detalles"][0]
+        data = MovimientoInventarioService().get_inventario_por_sucursal(suc.id)
+        detalle = data["detalles"][0]
         assert detalle["cantidad"] == 4
         assert detalle["precio_sucursal"] == "120.00"
 
@@ -138,7 +131,7 @@ class TestPrecioSucursal:
         prod = ProductoFactory()
         svc = PrecioSucursalService()
 
-        p1 = svc.create(
+        svc.create(
             {"id_producto": prod.id, "id_sucursal": suc.id, "precio_venta": "100.00"}
         )
         p2 = svc.create(

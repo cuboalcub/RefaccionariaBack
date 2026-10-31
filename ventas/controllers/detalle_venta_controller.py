@@ -32,14 +32,14 @@ class DetalleVentaDetail(BaseDetailController):
     def _check_sucursal(self, request, pk):
         """403 si un usuario no-staff opera un detalle de otra sucursal."""
         det = DetalleVenta.objects.select_related(
-            "id_venta__id_inventario__id_sucursal"
+            "id_venta__id_sucursal"
         ).filter(id=pk).first()
         if det is None:
             return
-        inv = det.id_venta.id_inventario if det.id_venta else None
-        exigir_misma_sucursal(
-            request.user, inv.id_sucursal_id if inv else None, "detalles"
+        sucursal_id = (
+            det.id_venta.id_sucursal_id if det.id_venta else None
         )
+        exigir_misma_sucursal(request.user, sucursal_id, "detalles")
 
     def _autorizado_o_error(self, request, pk, accion):
         try:

@@ -3,7 +3,6 @@ from django.db import models
 
 import uuid
 
-from django.db import models
 
 
 def _gen_codigo_sucursal():
