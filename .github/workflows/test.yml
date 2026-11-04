@@ -83,6 +83,12 @@ jobs:
       - name: Run tests (incluye coverage)
         run: pytest
 
+      - name: Coverage núcleo 100%
+        run: >-
+          python -m coverage report
+          --include="ventas/services/*,inventario/services/*"
+          --fail-under=100
+
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v4

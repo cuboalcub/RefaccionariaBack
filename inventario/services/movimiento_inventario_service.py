@@ -1,11 +1,18 @@
 from django.db import transaction
-from django.db.models import F
 
-from inventario.models import MovimientoInventario, Stock
+from inventario.models import MovimientoInventario
 from inventario.repositories.movimiento_inventario_repository import (
     MovimientoInventarioRepository,
 )
-from inventario.repositories.stock_repository import StockRepository
+from inventario.services.inventario_query_service import InventarioQueryService
+from inventario.services.movimiento_bulk_service import MovimientoBulkService
+from inventario.services.movimiento_utils import (
+    movimiento_to_dict,
+    programar_alerta,
+    signo,
+)
+from inventario.services.salida_venta_service import SalidaVentaService
+from inventario.services.stock_service import StockService
 from producto.models import Producto, Proveedor
 from repository.base_service import BaseService
 from repository.exceptions import NotFoundError
@@ -19,32 +26,6 @@ MSG_MOVIMIENTO_EXTERNO = (
 )
 MSG_AJUSTE_MANUAL = "Ajuste manual"
 CAMPOS_OBLIGATORIOS = ("id_producto", "id_sucursal", "cantidad")
-CAMPOS_BULK = (
-    "id_sucursal",
-    "id_proveedor",
-    "tipo_movimiento",
-    "tipo",
-    "razon",
-    "razón",
-    "observaciones",
-    "id_movimiento",  # se propaga para que create() lo rechace como deprecado
-)
-
-
-def _programar_alerta(producto_id, sucursal_id):
-    """Programa la evaluación de alertas de stock tras el commit.
-
-    Importación diferida para no acoplar el inventario a la app de
-    notificaciones a nivel de módulo. La evaluación corre en on_commit y
-    sus fallos solo quedan en el log (ver stock_alerts).
-    """
-    from notifications.services.stock_alerts import programar_evaluacion
-
-    programar_evaluacion(producto_id, sucursal_id)
-
-
-def _signo(tipo):
-    return 1 if tipo == MovimientoInventario.TipoMovimiento.ENTRADA else -1
 
 
 class MovimientoInventarioService(BaseService):
@@ -52,57 +33,28 @@ class MovimientoInventarioService(BaseService):
     sucursal, usuario y (en ventas) el detalle que lo generó; sobre esa
     base ajusta la fila cacheada de Stock por (sucursal, producto)."""
 
-    def __init__(self):
+    def __init__(self, stock_service=None, salida_service=None):
         super().__init__(
             model=MovimientoInventario,
             repository=MovimientoInventarioRepository(),
         )
-        self.stock_repo = StockRepository()
+        self.stock_service = stock_service or StockService()
+        self.salida_service = salida_service or SalidaVentaService(
+            stock_service=self.stock_service
+        )
+        self.query_service = InventarioQueryService()
 
     def _to_dict(self, instance):
-        if not instance:
-            return None
-        return {
-            "id": instance.id,
-            "tipo": instance.tipo,
-            "cantidad": instance.cantidad,
-            "fecha": instance.fecha.isoformat() if instance.fecha else None,
-            "razon": instance.razon,
-            "observaciones": instance.observaciones,
-            "id_producto": instance.id_producto_id,
-            "id_sucursal": instance.id_sucursal_id,
-            "id_usuario": instance.id_usuario_id,
-            "id_proveedor": instance.id_proveedor_id,
-            "id_detalle_venta": instance.id_detalle_venta_id,
-        }
+        return movimiento_to_dict(instance)
 
     def get_stock(self, producto_id, sucursal_id):
-        return self.stock_repo.get_stock(producto_id, sucursal_id)
+        return self.stock_service.get_stock(producto_id, sucursal_id)
 
     def _validar_salida(self, producto_id, sucursal_id, cantidad):
-        disponible = self.stock_repo.get_stock(producto_id, sucursal_id)
-        if disponible < cantidad:
-            raise ValueError(
-                f"Stock insuficiente: disponible {disponible}, solicitado {cantidad}"
-            )
+        return self.stock_service.validar_salida(producto_id, sucursal_id, cantidad)
 
     def get_stock_map_por_sucursal(self, sucursal_id):
-        return self.stock_repo.get_stock_map_por_sucursal(sucursal_id)
-
-    def _fila_stock(self, producto_id, sucursal_id):
-        """Fila de Stock bloqueada para escribir (se crea al vuelo si falta)."""
-        return Stock.objects.select_for_update().get_or_create(
-            id_producto_id=producto_id,
-            id_sucursal_id=sucursal_id,
-            defaults={"cantidad": 0},
-        )[0]
-
-    def _aplicar_delta(self, producto_id, sucursal_id, delta):
-        fila = self._fila_stock(producto_id, sucursal_id)
-        fila.cantidad = F("cantidad") + delta
-        fila.save(update_fields=["cantidad"])
-        fila.refresh_from_db(fields=["cantidad"])
-        return fila.cantidad
+        return self.stock_service.get_stock_map_por_sucursal(sucursal_id)
 
     def _validar_campos_obligatorios(self, data):
         faltantes = [f for f in CAMPOS_OBLIGATORIOS if f not in data or data[f] is None]
@@ -140,7 +92,7 @@ class MovimientoInventarioService(BaseService):
             data["id_proveedor"] = Proveedor.objects.get(id=data["id_proveedor"])
         else:
             data.pop("id_proveedor", None)
-        fila = self._fila_stock(data["id_producto"], data["id_sucursal"])
+        fila = self.stock_service.fila_stock(data["id_producto"], data["id_sucursal"])
         if tipo == MovimientoInventario.TipoMovimiento.SALIDA and fila.cantidad < data["cantidad"]:
             raise ValueError(
                 f"Stock insuficiente: disponible {fila.cantidad}, solicitado {data['cantidad']}"
@@ -155,10 +107,10 @@ class MovimientoInventarioService(BaseService):
             id_proveedor=data.get("id_proveedor"),
             id_usuario=user,
         )
-        self._aplicar_delta(
-            data["id_producto"], data["id_sucursal"], _signo(tipo) * data["cantidad"]
+        self.stock_service.aplicar_delta(
+            data["id_producto"], data["id_sucursal"], signo(tipo) * data["cantidad"]
         )
-        _programar_alerta(data["id_producto"], data["id_sucursal"])
+        programar_alerta(data["id_producto"], data["id_sucursal"])
         return self._to_dict(movimiento)
 
     @transaction.atomic
@@ -199,14 +151,14 @@ class MovimientoInventarioService(BaseService):
                     raise ValueError(MSG_PROVEEDOR_INEXISTENTE)
                 data["id_proveedor"] = Proveedor.objects.get(id=data["id_proveedor"])
 
-        delta_viejo = _signo(movimiento.tipo) * movimiento.cantidad
-        delta_nuevo = _signo(nuevo_tipo) * nueva_cantidad
+        delta_viejo = signo(movimiento.tipo) * movimiento.cantidad
+        delta_nuevo = signo(nuevo_tipo) * nueva_cantidad
         mismo_par = (
             nuevo_producto_id == movimiento.id_producto_id
             and nueva_sucursal_id == movimiento.id_sucursal_id
         )
         if nuevo_tipo == MovimientoInventario.TipoMovimiento.SALIDA:
-            fila = self._fila_stock(nuevo_producto_id, nueva_sucursal_id)
+            fila = self.stock_service.fila_stock(nuevo_producto_id, nueva_sucursal_id)
             stock_sin_este = fila.cantidad - (delta_viejo if mismo_par else 0)
             if stock_sin_este < nueva_cantidad:
                 raise ValueError(
@@ -214,15 +166,19 @@ class MovimientoInventarioService(BaseService):
                 )
 
         if mismo_par:
-            self._aplicar_delta(
+            self.stock_service.aplicar_delta(
                 movimiento.id_producto_id,
                 movimiento.id_sucursal_id,
                 delta_nuevo - delta_viejo,
             )
             pares_alerta = [(nuevo_producto_id, nueva_sucursal_id)]
         else:
-            self._aplicar_delta(movimiento.id_producto_id, movimiento.id_sucursal_id, -delta_viejo)
-            self._aplicar_delta(nuevo_producto_id, nueva_sucursal_id, delta_nuevo)
+            self.stock_service.aplicar_delta(
+                movimiento.id_producto_id, movimiento.id_sucursal_id, -delta_viejo
+            )
+            self.stock_service.aplicar_delta(
+                nuevo_producto_id, nueva_sucursal_id, delta_nuevo
+            )
             pares_alerta = [
                 (movimiento.id_producto_id, movimiento.id_sucursal_id),
                 (nuevo_producto_id, nueva_sucursal_id),
@@ -241,7 +197,7 @@ class MovimientoInventarioService(BaseService):
         movimiento.save()
 
         for pid, sid in pares_alerta:
-            _programar_alerta(pid, sid)
+            programar_alerta(pid, sid)
         return self._to_dict(movimiento)
 
     @transaction.atomic
@@ -251,9 +207,11 @@ class MovimientoInventarioService(BaseService):
             raise NotFoundError(
                 f"{self.model.__name__} con id {entity_id} no encontrado"
             )
-        delta = _signo(movimiento.tipo) * movimiento.cantidad
-        self._aplicar_delta(movimiento.id_producto_id, movimiento.id_sucursal_id, -delta)
-        _programar_alerta(movimiento.id_producto_id, movimiento.id_sucursal_id)
+        delta = signo(movimiento.tipo) * movimiento.cantidad
+        self.stock_service.aplicar_delta(
+            movimiento.id_producto_id, movimiento.id_sucursal_id, -delta
+        )
+        programar_alerta(movimiento.id_producto_id, movimiento.id_sucursal_id)
         movimiento.delete()
         return {"message": f"{self.model.__name__} eliminado exitosamente"}
 
@@ -262,173 +220,30 @@ class MovimientoInventarioService(BaseService):
     def crear_salida_por_venta(
         self, detalle_venta, producto, sucursal_id, cantidad, user=None
     ):
-        fila = self._fila_stock(producto.id, sucursal_id)
-        if fila.cantidad < cantidad:
-            raise ValueError(
-                f"Stock insuficiente: disponible {fila.cantidad}, solicitado {cantidad}"
-            )
-        movimiento = MovimientoInventario.objects.create(
-            tipo=MovimientoInventario.TipoMovimiento.SALIDA,
-            cantidad=cantidad,
-            razon="Venta",
-            observaciones=f"Venta {detalle_venta.id_venta_id}",
-            id_producto=producto,
-            id_sucursal_id=sucursal_id,
-            id_usuario=user,
-            id_detalle_venta=detalle_venta,
+        return self.salida_service.crear_salida_por_venta(
+            detalle_venta, producto, sucursal_id, cantidad, user=user
         )
-        self._aplicar_delta(producto.id, sucursal_id, -cantidad)
-        _programar_alerta(producto.id, sucursal_id)
-        return self._to_dict(movimiento)
 
     def ajustar_salida_por_venta(
         self, detalle_venta, nueva_cantidad, producto=None, sucursal_id=None
     ):
-        movimiento = self.repository.filter(
-            {"id_detalle_venta_id": detalle_venta.id}
+        return self.salida_service.ajustar_salida_por_venta(
+            detalle_venta,
+            nueva_cantidad,
+            producto=producto,
+            sucursal_id=sucursal_id,
         )
-        movimiento = movimiento[0] if movimiento else None
-        if not movimiento:
-            return None
-
-        nuevo_producto = producto or movimiento.id_producto
-        nueva_sucursal = sucursal_id or movimiento.id_sucursal_id
-        misma_par = (
-            nuevo_producto.id == movimiento.id_producto_id
-            and nueva_sucursal == movimiento.id_sucursal_id
-        )
-        fila = self._fila_stock(nuevo_producto.id, nueva_sucursal)
-        stock_sin_este = fila.cantidad + (
-            movimiento.cantidad if misma_par else 0
-        )
-        if stock_sin_este < nueva_cantidad:
-            raise ValueError(
-                f"Stock insuficiente: disponible {stock_sin_este}, solicitado {nueva_cantidad}"
-            )
-
-        if misma_par:
-            self._aplicar_delta(
-                movimiento.id_producto_id,
-                movimiento.id_sucursal_id,
-                movimiento.cantidad - nueva_cantidad,
-            )
-            pares_alerta = [(nuevo_producto.id, nueva_sucursal)]
-        else:
-            self._aplicar_delta(
-                movimiento.id_producto_id, movimiento.id_sucursal_id, movimiento.cantidad
-            )
-            self._aplicar_delta(nuevo_producto.id, nueva_sucursal, -nueva_cantidad)
-            pares_alerta = [
-                (movimiento.id_producto_id, movimiento.id_sucursal_id),
-                (nuevo_producto.id, nueva_sucursal),
-            ]
-
-        movimiento.cantidad = nueva_cantidad
-        movimiento.id_producto = nuevo_producto
-        movimiento.id_sucursal_id = nueva_sucursal
-        movimiento.save(update_fields=["id_producto", "id_sucursal", "cantidad", "tipo"])
-        for pid, sid in pares_alerta:
-            _programar_alerta(pid, sid)
-        return self._to_dict(movimiento)
 
     def revertir_salida_por_venta(self, detalle_venta):
-        movimiento = self.repository.filter(
-            {"id_detalle_venta_id": detalle_venta.id}
-        )
-        movimiento = movimiento[0] if movimiento else None
-        if not movimiento:
-            return None
-        producto_id = movimiento.id_producto_id
-        sucursal_id = movimiento.id_sucursal_id
-        self._aplicar_delta(producto_id, sucursal_id, movimiento.cantidad)
-        _programar_alerta(producto_id, sucursal_id)
-        movimiento.delete()
-        return True
+        return self.salida_service.revertir_salida_por_venta(detalle_venta)
 
     # ---- consultas ----
 
     def get_inventario_por_sucursal(self, sucursal_id):
-        """Catálogo agrupado por producto: {id_sucursal, detalles} con
-        la misma forma de item que la versión anterior (Stock + precio
-        activo por sucursal)."""
-        from inventario.models import PrecioSucursal
-
-        precio_map = {
-            ps.id_producto_id: ps
-            for ps in PrecioSucursal.objects.filter(
-                id_sucursal_id=sucursal_id, activo=True
-            )
-        }
-        detalles = []
-        for fila in Stock.objects.select_related("id_producto").filter(
-            id_sucursal_id=sucursal_id
-        ):
-            producto = fila.id_producto
-            ps = precio_map.get(producto.id)
-            detalles.append(
-                {
-                    "id": fila.id,
-                    "id_producto": producto.id,
-                    "nombre": producto.nombre,
-                    "clave": producto.clave,
-                    "marca": producto.marca,
-                    "codigo_barras": producto.codigo_barras,
-                    "precio_venta": str(producto.precio_venta),
-                    "precio_sucursal": str(ps.precio_venta) if ps else None,
-                    "vigente_desde": ps.vigente_desde.isoformat() if ps and ps.vigente_desde else None,
-                    "precio_base": str(producto.precio_venta),
-                    "costo": str(producto.costo),
-                    "cantidad": fila.cantidad,
-                }
-            )
-        detalles.sort(key=lambda p: p["nombre"])
-        return {"id_sucursal": sucursal_id, "detalles": detalles}
+        return self.query_service.get_inventario_por_sucursal(sucursal_id)
 
     # ---- bulk ----
 
     @transaction.atomic
     def bulk_create(self, data, user=None):
-        """Crea múltiples movimientos en una transacción (1 por línea).
-        Formatos soportados:
-        1) {"id_sucursal":1,"id_proveedor":1,"items":[{"id_producto":1,"cantidad":5},...]}
-        2) {"id_sucursal":1,"detalles":[...]}  (alias)
-        3) [{"id_producto":1,"id_sucursal":1,"cantidad":5}, ...] (lista plana)
-        """
-        if isinstance(data, dict) and not (
-            isinstance(data.get("items"), list) or isinstance(data.get("detalles"), list)
-        ):
-            return [self.create(data, user=user)]
-
-        items, comun = self._normalizar_bulk(data)
-        if items is None:
-            raise ValueError(
-                "Formato bulk inválido. Use {'id_sucursal':1,'items':[...]} o lista de objetos"
-            )
-        if not items:
-            raise ValueError("La lista de items no puede estar vacía")
-
-        resultados = []
-        for idx, item in enumerate(items):
-            resultados.append(self._procesar_item_bulk(idx, item, comun, user))
-        return resultados
-
-    @staticmethod
-    def _normalizar_bulk(data):
-        if isinstance(data, list):
-            return data, {}
-        if isinstance(data, dict):
-            for key in ("items", "detalles"):
-                if isinstance(data.get(key), list):
-                    return data[key], {
-                        k: data[k] for k in CAMPOS_BULK if k in data
-                    }
-        return None, None
-
-    def _procesar_item_bulk(self, idx, item, comun, user):
-        if not isinstance(item, dict):
-            raise ValueError(f"Item {idx} debe ser un objeto")
-        cur = dict(item)
-        for k in CAMPOS_BULK:
-            if cur.get(k) is None and comun.get(k) is not None:
-                cur[k] = comun[k]
-        return self.create(cur, user=user)
+        return MovimientoBulkService(self.create).bulk_create(data, user=user)
