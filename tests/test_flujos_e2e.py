@@ -57,16 +57,24 @@ class TestFlujoVentaCompleta:
         )
         assert r.status_code == 201
         vid = r.data["id"]
-        assert r.data["total"] == "200.00"
+        assert r.data["subtotal"] == "200.00"
+        assert r.data["iva"] == "32.00"
+        assert r.data["total"] == "232.00"
         assert MovimientoInventarioService().get_stock(prod.id, inv.id) == 8
 
         t = c.get(f"/api/ventas/{vid}/ticket/")
         assert t.status_code == 200
-        assert t.data["total"] == "200.00"
+        assert t.data["subtotal"] == "200.00"
+        assert t.data["iva"] == "32.00"
+        assert t.data["total"] == "232.00"
         assert t.data["productos"][0]["cantidad"] == 2
 
         rep = ReporteVentaService().generar_reporte("day")
         assert vid in [x["id"] for x in rep["ventas"]]
+        fila = next(x for x in rep["ventas"] if x["id"] == vid)
+        assert fila["subtotal"] == Decimal("200.00")
+        assert fila["iva"] == Decimal("32.00")
+        assert fila["total"] == Decimal("232.00")
 
         assert c.delete(f"/api/ventas/{vid}/").status_code == 200
         assert MovimientoInventarioService().get_stock(prod.id, inv.id) == 10

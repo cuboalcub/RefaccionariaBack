@@ -1,3 +1,4 @@
+from django.contrib.auth.models import User
 from django.test import TestCase
 from unittest.mock import patch, MagicMock
 from usuario.services.usuario_service import UserService
@@ -51,23 +52,96 @@ class UserServiceTestCase(TestCase):
         result = self.service.login("miguel", "wrongpass")
         self.assertIsNone(result)
 
-    @patch("usuario.services.usuario_service.UserRepository.get_by_username")
-    @patch("usuario.services.usuario_service.UserRepository.create")
-    def test_create_user_success(self, mock_create, mock_get_by_username):
-        """Testea que se cree un usuario de forma correcta"""
-        mock_get_by_username.return_value = None
+    def test_create_user_success(self):
+        """Testea que se cree un usuario con su perfil de sucursal"""
+        sucursal = Sucursal.objects.create(ubicacion="Centro")
 
-        user_mock = MagicMock()
-        user_mock.id = 1
-        user_mock.username = "miguel"
-        user_mock.email = "miguel@gmail.com"
-        user_mock.is_active = True
+        result = self.service.create_user({
+            "username": "miguel",
+            "password": "eldenring",
+            "id_sucursal": sucursal.id,
+        })
 
-        mock_create.return_value = user_mock
-
-        result = self.service.create_user({"username": "miguel", "password": "eldenring"})
         self.assertEqual(result["username"], "miguel")
-        self.assertEqual(result["id"], 1)
+        self.assertEqual(result["id_sucursal"], sucursal.id)
+        self.assertEqual(result["rol"], "cajero")
+        self.assertTrue(Perfil.objects.filter(usuario__username="miguel").exists())
+
+    def test_create_user_staff_hereda_su_sucursal(self):
+        sucursal = Sucursal.objects.create(ubicacion="Centro")
+        actor = User.objects.create_user(username="staff", password="x", is_staff=True)
+        Perfil.objects.create(usuario=actor, id_sucursal=sucursal, rol="encargado")
+
+        result = self.service.create_user(
+            {"username": "nuevo", "password": "x"}, actor=actor
+        )
+
+        perfil = Perfil.objects.get(usuario__username="nuevo")
+        self.assertEqual(perfil.id_sucursal_id, sucursal.id)
+        self.assertEqual(perfil.rol, "cajero")
+        self.assertEqual(result["id_sucursal"], sucursal.id)
+
+    def test_create_user_staff_sin_sucursal_raises(self):
+        actor = User.objects.create_user(username="staff2", password="x", is_staff=True)
+        with self.assertRaises(ValueError):
+            self.service.create_user({"username": "nuevo2", "password": "x"}, actor=actor)
+
+    def test_update_user_staff_asigna_sucursal_y_rol(self):
+        sucursal = Sucursal.objects.create(ubicacion="Centro")
+        actor = User.objects.create_user(username="staff3", password="x", is_staff=True)
+        target = User.objects.create_user(username="target", password="x")
+
+        result = self.service.update_user(
+            target.id, {"id_sucursal": sucursal.id, "rol": "encargado"}, actor=actor
+        )
+
+        perfil = Perfil.objects.get(usuario=target)
+        self.assertEqual((perfil.id_sucursal_id, perfil.rol), (sucursal.id, "encargado"))
+        self.assertEqual(result["id_sucursal"], sucursal.id)
+        self.assertEqual(result["rol"], "encargado")
+
+    def test_update_user_no_staff_ignora_asignacion(self):
+        sucursal = Sucursal.objects.create(ubicacion="Centro")
+        otra = Sucursal.objects.create(ubicacion="Norte")
+        actor = User.objects.create_user(username="enc", password="x")
+        Perfil.objects.create(usuario=actor, id_sucursal=sucursal, rol="encargado")
+        target = User.objects.create_user(username="caj", password="x")
+        Perfil.objects.create(usuario=target, id_sucursal=sucursal, rol="cajero")
+
+        self.service.update_user(
+            target.id, {"id_sucursal": otra.id, "rol": "admin"}, actor=actor
+        )
+
+        perfil = Perfil.objects.get(usuario=target)
+        self.assertEqual((perfil.id_sucursal_id, perfil.rol), (sucursal.id, "cajero"))
+
+    def test_update_user_asignacion_vacia_no_cambia(self):
+        target = User.objects.create_user(username="target2", password="x")
+
+        result = self.service.update_user(target.id, {"id_sucursal": "", "rol": ""})
+
+        self.assertFalse(Perfil.objects.filter(usuario=target).exists())
+        self.assertIsNone(result["id_sucursal"])
+        self.assertEqual(result["rol"], "cajero")
+
+    def test_update_user_solo_rol_crea_perfil_sin_sucursal(self):
+        target = User.objects.create_user(username="target3", password="x")
+
+        self.service.update_user(target.id, {"rol": "encargado"})
+
+        perfil = Perfil.objects.get(usuario=target)
+        self.assertIsNone(perfil.id_sucursal_id)
+        self.assertEqual(perfil.rol, "encargado")
+
+    def test_update_user_rol_invalido_raises(self):
+        target = User.objects.create_user(username="target4", password="x")
+        with self.assertRaises(ValueError):
+            self.service.update_user(target.id, {"rol": "jefe"})
+
+    def test_update_user_sucursal_invalida_raises(self):
+        target = User.objects.create_user(username="target5", password="x")
+        with self.assertRaises(ValueError):
+            self.service.update_user(target.id, {"id_sucursal": 99999})
 
     @patch("usuario.services.usuario_service.UserRepository.get_by_username")
     def test_create_user_existing_username_raises(self, mock_get_by_username):

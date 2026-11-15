@@ -6,6 +6,9 @@ class UserRepository(BaseRepository):
     def __init__(self):
         super().__init__(User)
 
+    def get_all(self):
+        return list(User.objects.select_related("perfil").all())
+
     def create(self, user_data):
         return User.objects.create_user(**user_data)
 

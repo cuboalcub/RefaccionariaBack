@@ -622,8 +622,8 @@ class TestUserService:
         assert Perfil.objects.filter(usuario__username="consuc").exists()
 
     def test_create_user_sin_sucursal(self):
-        out = UserService().create_user({"username": "sinsuc", "password": "x"})
-        assert out["username"] == "sinsuc"
+        with pytest.raises(ValueError, match="id_sucursal"):
+            UserService().create_user({"username": "sinsuc", "password": "x"})
 
 
 # ================= usuario models __str__ + perfil_controller =================

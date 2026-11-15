@@ -120,7 +120,7 @@ class TestVentaSucursalYCliente:
         )
         assert res["id_cliente"] == cliente.id
         assert res["estado"] == "completada"
-        assert Decimal(res["total"]) == Decimal("200.00")
+        assert Decimal(res["total"]) == Decimal("232.00")
 
 
 @pytest.mark.django_db
@@ -137,7 +137,7 @@ class TestCancelacionSuave:
         assert venta.estado == "cancelada"
         # detalle sobrevive, el stock vuelve
         assert venta.detalleventa_set.count() == 1
-        assert venta.total == Decimal("200.00")
+        assert venta.total == Decimal("232.00")
         assert MovimientoInventarioService().get_stock(prod.id, inv.id) == 10
 
     def test_delete_idempotente_no_duplica_reversion(self):
@@ -294,4 +294,4 @@ class TestReporteExcluyeCanceladas:
         assert v_ok["id"] in ids
         assert v_can["id"] not in ids
         total = repo.get_total_ventas_por_rango(ini, fin)
-        assert total == Decimal("100.00")
+        assert total == Decimal("116.00")

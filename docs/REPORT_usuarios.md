@@ -6,9 +6,10 @@
 `repository/permissions.py` (matriz), `repository/base_controller.py` (permisos declarativos).
 
 ## Reglas de negocio verificadas
-- Login emite `rol`; registro cerrado (encargado crea cajeros propios, staff libre, anónimo 401).
+- Login emite `id_sucursal` y `rol`; registro cerrado (encargado crea cajeros propios, staff libre, anónimo 401).
+- Staff sin `id_sucursal` hereda la de su perfil; si no tiene, el alta responde 400. Siempre se crea `Perfil` para que el usuario pueda operar.
 - Encargado modifica datos/password/activo de su sucursal; no borra, no cambia roles/sucursales, no toca otras sucursales (403).
-- `DELETE` solo staff; `update_user` y `PUT /api/perfil/` ignoran `is_staff/is_superuser/rol` (sin auto-escalación).
+- Staff puede reasignar `id_sucursal`/`rol` con `PUT /api/users/<id>`; `PUT /api/perfil/` sigue ignorando el rol (sin auto-escalación).
 - Definición única de admin: `is_staff` (superuser la implica).
 - Backfill: staff existentes → admin, resto cajero (migración con reversa, sin aplicar en prod).
 
@@ -20,9 +21,10 @@
 ## Bugs encontrados y correcciones
 - Registro público aceptaba `rol` (se ignoraba pero llegaba al ORM): ahora se descarta + test.
 - `GET /api/users` y detalle sin scoping: filtrados/403 por sucursal.
+- Alta de staff sin `id_sucursal` dejaba al usuario sin `Perfil` y no podía operar: ahora hereda la sucursal del creador (o 400) y el `Perfil` siempre se crea.
 - Inconsistencia admin (`is_superuser` vs `IsAdminUser→is_staff`): documentada; negocio usa `is_staff`.
 
 ## Riesgos y pendientes
-- Cambio de `rol` solo por shell/admin (sin endpoint): operativo, documentar responsables.
+- Reasignación de `rol`/sucursal por staff vía API: auditar quién la ejecuta (sin log de cambios todavía).
 - Arranque: primer staff vía `createsuperuser`; sin él nadie da de alta.
 - `is_active=False` no bloquea `login()` por password (solo JWT lo rechaza): decidir si endurecer.
