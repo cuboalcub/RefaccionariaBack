@@ -50,6 +50,19 @@ def errores_de_stock(lineas, stocks, productos, sucursal_id):
     return errores
 
 
+def bloquear_producto(producto_id):
+    return Producto.objects.select_for_update().get(id=producto_id)
+
+
+def bloquear_stock(producto_id, sucursal_id):
+    list(
+        Stock.objects.select_for_update().filter(
+            id_producto_id=producto_id,
+            id_sucursal_id=sucursal_id,
+        )
+    )
+
+
 def revertir_salidas(venta):
     """Devuelve el stock de todos los detalles de una venta (por cancelación)."""
     from inventario.services.movimiento_inventario_service import (

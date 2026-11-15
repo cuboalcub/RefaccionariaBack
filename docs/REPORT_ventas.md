@@ -6,7 +6,7 @@
 `repositories/{venta,detalle_venta,metodo_pago}_*.py`, `repository/{base_service,base_controller,permissions}.py`.
 
 ## Reglas de negocio verificadas
-- Subtotal server-side (`precio×cantidad`, 2 decimales); total = suma de subtotales, recalculado en crear/actualizar/borrar detalle.
+- Subtotal server-side (`precio×cantidad`, 2 decimales); total = suma de subtotales + 16% de IVA, recalculado en crear/actualizar/borrar detalle. Se expone `subtotal`, `iva` y `total` por venta (ticket y reporte incluidos).
 - Precio por sucursal con fallback a base; stock medido en el inventario de la venta; cross-sucursal bloqueado (staff bypass).
 - Cantidad entera > 0 (un `SALIDA -N` sumaba stock: corregido).
 - `PUT /api/ventas/` ignora `total/inventario/usuario` (antes manipulable).

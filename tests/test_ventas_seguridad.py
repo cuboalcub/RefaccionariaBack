@@ -118,7 +118,7 @@ class TestPutVentaBlindado:
         c = _auth(u)
         resp = c.put(f"/api/ventas/{v['id']}/", {"total": "99.00"}, format="json")
         assert resp.status_code == 200
-        assert Venta.objects.get(id=v["id"]).total == Decimal("200.00")
+        assert Venta.objects.get(id=v["id"]).total == Decimal("232.00")
 
     def test_put_cambia_metodo_pago(self):
         _, _, _, u, _, v = _ctx(rol="encargado")

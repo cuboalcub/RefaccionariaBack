@@ -63,5 +63,7 @@ class VentaTicketService:
                 else None
             ),
             "productos": productos,
+            "subtotal": str((venta_obj.total or 0) - (venta_obj.iva or 0)),
+            "iva": str(venta_obj.iva or 0),
             "total": str(venta_obj.total),
         }

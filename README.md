@@ -77,19 +77,19 @@ python manage.py runserver
 - `PUT` reajusta el stock por diferencia y permite mover producto/sucursal; `DELETE` revierte el delta.
 
 ### Ventas
-- `POST /api/ventas/` **ignora** `total`, `id_usuario` e `id_inventario` enviados por el cliente. `id_usuario` y sucursal se toman automáticamente del JWT/perfil (`Authorization: Bearer <access_token>` → `Perfil.sucursal`). Solo recibe `id_metodo_pago` (más `detalles` opcional para creación atómica). El total se calcula automáticamente sumando los `subtotal` de sus detalles. Staff/superuser puede enviar `sucursal_id` como override explícito. Sin JWT se exige `id_sucursal`; `id_inventario` ya no se mapea. Las respuestas exponen `id_sucursal` y `GET /api/ventas/` filtra por `sucursal_id`.
+- `POST /api/ventas/` **ignora** `total`, `id_usuario` e `id_inventario` enviados por el cliente. `id_usuario` y sucursal se toman automáticamente del JWT/perfil (`Authorization: Bearer <access_token>` → `Perfil.sucursal`). Solo recibe `id_metodo_pago` (más `detalles` opcional para creación atómica). El total se calcula automáticamente sumando los `subtotal` de sus detalles y agregando 16% de IVA (`total = subtotal + iva`). Staff/superuser puede enviar `sucursal_id` como override explícito. Sin JWT se exige `id_sucursal`; `id_inventario` ya no se mapea. Las respuestas exponen `id_sucursal` y `GET /api/ventas/` filtra por `sucursal_id`.
 - `POST /api/detalleventa/` (crear) está **deprecado** → `410 Gone`: crear siempre con `POST /api/ventas/` + `detalles` (atómico). `GET/PUT/DELETE` por unidad siguen vigentes; al ajustar/borrar el detalle, la salida se revierte (con locks de venta + stock).
 - Cada detalle de venta genera un `MovimientoInventario` de tipo `SALIDA` con `id_detalle_venta`, `id_usuario` (vendedor) y `razon="Venta"`. Su FK es `PROTECT`: el borrado directo por ORM/shell falla en vez de dejar huérfanos; borrar siempre vía servicios.
-- El `subtotal` de cada detalle se calcula **en el servidor** como `precio_venta * cantidad` del producto (se ignora cualquier `subtotal` enviado por el cliente).
+- El `subtotal` de cada detalle se calcula **en el servidor** como `precio_venta * cantidad` del producto (se ignora cualquier `subtotal` enviado por el cliente). Las respuestas de venta, el ticket y el reporte exponen `subtotal`, `iva` y `total` (este último con IVA).
 
 ### Autenticación
 - La mayoría de los endpoints requieren el header `Authorization: Bearer <access_token>` (JWT).
-- Público: `POST /api/login`. El registro es cerrado: `POST /api/users` exige encargado (crea cajeros de su sucursal) o staff.
-- `DELETE /api/users/<id>` solo para usuarios staff.
+- Público: `POST /api/login`. El registro es cerrado: `POST /api/users` exige encargado (crea cajeros de su sucursal) o staff. Si un staff no envía `id_sucursal`, se hereda la de su propio perfil; si tampoco tiene, responde 400. Las respuestas de usuario y el login exponen `id_sucursal` y `rol`.
+- `PUT /api/users/<id>`: solo staff puede cambiar `id_sucursal` y `rol` (encargado los ignora). `DELETE /api/users/<id>` solo para usuarios staff.
 
 ### Roles y sucursales
 - `Perfil.rol`: `cajero` (default) / `encargado` / `admin`. `is_staff` implica todo (`is_superuser` la implica). Sin perfil el rol es `cajero`.
-- Matriz: cajero vende y lee; encargado además anula ventas, escribe movimientos/bulk y precios, ve reporte y gestiona usuarios de su sucursal (crear cajeros, modificar datos/password/activo; no borra ni cambia roles); admin además gestiona sucursales. El login expone `rol`; el registro y `PUT /api/perfil/` lo ignoran (sin auto-escalación; el rol se asigna por shell/admin).
+- Matriz: cajero vende y lee; encargado además anula ventas, escribe movimientos/bulk y precios, ve reporte y gestiona usuarios de su sucursal (crear cajeros, modificar datos/password/activo; no borra ni cambia roles ni sucursal); staff/admin además gestiona sucursales y puede reasignar `id_sucursal`/`rol` por `PUT /api/users/<id>`. El login expone `id_sucursal` y `rol`; el registro y `PUT /api/perfil/` ignoran el rol (sin auto-escalación).
 - Todo está acotado por sucursal (JWT/perfil, staff con override): otra sucursal → 403, sin sucursal → 400. Sin permiso de rol → 403. Movimientos y lectura de catálogos siguen globales.
 ```
 RefaccionariaBack

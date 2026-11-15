@@ -102,7 +102,7 @@ class TestDetalleVentaService:
             {"id_producto": prod.id, "id_venta": v["id"], "cantidad": 2}, user=u
         )
         assert res["subtotal"] == "200.00"
-        assert Venta.objects.get(id=v["id"]).total == Decimal("200.00")
+        assert Venta.objects.get(id=v["id"]).total == Decimal("232.00")
         # stock descontado: 10 - 2
         assert StockRepository().get_stock(prod.id, suc.id) == 8
 

@@ -13,6 +13,7 @@ from ventas.services.venta_detalles import (
     ERRORES_EN_DETALLES_PREFIJO,
     normalizar_detalles,
 )
+from ventas.services.iva import calcular_iva
 from ventas.services.venta_query import VentaQueryService, venta_to_dict
 from ventas.services.venta_stock import (
     bloquear_productos,
@@ -52,6 +53,7 @@ class VentaService(BaseService):
             "id_sucursal_id": sucursal_id,
             "id_cliente": self.cabecera.cliente_validado(data),
             "estado": "completada",
+            "iva": 0,
             "total": 0
         }
         venta = super().create(venta_data)
@@ -143,8 +145,10 @@ class VentaService(BaseService):
                     "subtotal": str(subtotal),
                 }
             )
-        venta_obj.total = total.quantize(_Decimal("0.01"))
-        venta_obj.save(update_fields=["total"])
+        iva = calcular_iva(total)
+        venta_obj.iva = iva
+        venta_obj.total = (total + iva).quantize(_Decimal("0.01"))
+        venta_obj.save(update_fields=["iva", "total"])
         resultado = self._to_dict(venta_obj)
         resultado["detalles"] = detalles_out
         return resultado

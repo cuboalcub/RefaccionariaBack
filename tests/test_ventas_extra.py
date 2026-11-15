@@ -84,7 +84,8 @@ class TestVentaToDict:
             id_sucursal_id=7,
             id_cliente_id=3,
             estado="completada",
-            total=Decimal("5.00"),
+            iva=Decimal("0.80"),
+            total=Decimal("5.80"),
             fecha=None,
         )
         d = VentaService()._to_dict(inst)
@@ -92,6 +93,9 @@ class TestVentaToDict:
         assert d["id_sucursal"] == 7
         assert d["id_cliente"] == 3
         assert d["estado"] == "completada"
+        assert d["subtotal"] == "5.00"
+        assert d["iva"] == "0.80"
+        assert d["total"] == "5.80"
         assert d["fecha"] is None
 
 
@@ -314,8 +318,8 @@ class TestDetallePrecioRecalculo:
     def test_recalcular_total(self):
         suc, inv, prod, user, mp, v, det = _venta_con_stock(qty_venta=2)
         total = DetalleVentaService()._recalcular_total(v["id"])
-        assert total == Decimal("200.00")
-        assert Venta.objects.get(id=v["id"]).total == Decimal("200.00")
+        assert total == Decimal("232.00")
+        assert Venta.objects.get(id=v["id"]).total == Decimal("232.00")
 
 
 # ---------------------------------------------------- DetalleVentaService.update
@@ -341,7 +345,8 @@ class TestDetalleUpdate:
         suc, inv, prod, user, mp, v, det = _venta_con_stock(qty_venta=2)
         res = DetalleVentaService().update(det["id"], {"cantidad": 3}, user=user)
         assert res["subtotal"] == "300.00"
-        assert Venta.objects.get(id=v["id"]).total == Decimal("300.00")
+        assert Venta.objects.get(id=v["id"]).iva == Decimal("48.00")
+        assert Venta.objects.get(id=v["id"]).total == Decimal("348.00")
 
 
 # ---------------------------------------------------- DetalleVentaService.delete
@@ -353,9 +358,10 @@ class TestDetalleDelete:
 
     def test_restituye_total(self):
         suc, inv, prod, user, mp, v, det = _venta_con_stock(qty_venta=2)
-        assert Venta.objects.get(id=v["id"]).total == Decimal("200.00")
+        assert Venta.objects.get(id=v["id"]).total == Decimal("232.00")
         out = DetalleVentaService().delete(det["id"])
         assert "eliminado" in out["message"]
+        assert Venta.objects.get(id=v["id"]).iva == Decimal("0")
         assert Venta.objects.get(id=v["id"]).total == Decimal("0")
         with pytest.raises(NotFoundError):
             DetalleVentaService().get_by_id(det["id"])
@@ -455,7 +461,7 @@ class TestVentaTicket:
         assert t["vendedor"] == user.username
         assert t["metodo_pago"] == mp.tipo
         assert t["sucursal"] == str(inv)
-        assert t["total"] == "200.00"
+        assert t["total"] == "232.00"
         assert len(t["productos"]) == 1
         p = t["productos"][0]
         assert p["nombre"] == prod.nombre and p["cantidad"] == 2
@@ -495,7 +501,7 @@ class TestVentaTicket:
         fake_venta = SimpleNamespace(
             id=7, fecha=None, id_usuario=None, id_metodo_pago=None,
             id_sucursal=None,
-            detalleventa_set=fake_qs, total=Decimal("10.00"),
+            detalleventa_set=fake_qs, iva=Decimal("1.60"), total=Decimal("11.60"),
         )
         chain = mock.MagicMock()
         chain.select_related.return_value.prefetch_related.return_value \
@@ -589,7 +595,7 @@ class TestReporteGenerar:
         row = next(x for x in rep["ventas"] if x["id"] == v["id"])
         assert row["vendedor"] == "Juan Perez"
         assert row["metodo_pago"] == mp.tipo
-        assert row["total"] == Decimal("200.00")
+        assert row["total"] == Decimal("232.00")
         assert row["detalles"][0]["producto"] == prod.nombre
         assert row["detalles"][0]["cantidad"] == 2
         assert rep["total_general"] >= Decimal("200.00")

@@ -1,18 +1,20 @@
-from decimal import Decimal
-
 from django.core.exceptions import ValidationError
 from django.db import transaction
 
-from ventas.models import DetalleVenta
-from ventas.repositories.detalle_venta_repository import DetalleVentaRepository
+from inventario.services.movimiento_inventario_service import (
+    MovimientoInventarioService,
+)
 from producto.models import Producto
 from producto.repositories.producto_repository import ProductoRepository
-from ventas.repositories.venta_repository import VentaRepository
-from inventario.services.movimiento_inventario_service import MovimientoInventarioService
-from inventario.services.precio_sucursal_service import PrecioSucursalService
 from repository.base_service import BaseService
 from repository.exceptions import NotFoundError
-from repository.permissions import es_staff
+from ventas.models import DetalleVenta, Venta
+from ventas.repositories.detalle_venta_repository import DetalleVentaRepository
+from ventas.repositories.venta_repository import VentaRepository
+from ventas.services.detalle_venta_calculo import DetalleVentaCalculo
+from ventas.services.detalle_venta_validacion import DetalleVentaValidacion
+from ventas.services.venta_stock import bloquear_producto, bloquear_stock
+
 
 class DetalleVentaService(BaseService):
     def __init__(self, detalle_repo=None, producto_repo=None, venta_repo=None):
@@ -20,6 +22,8 @@ class DetalleVentaService(BaseService):
         self.producto_repo = producto_repo or ProductoRepository()
         self.venta_repo = venta_repo or VentaRepository()
         self.movimiento_service = MovimientoInventarioService()
+        self.calculo = DetalleVentaCalculo(self.repository, self.venta_repo)
+        self.validacion = DetalleVentaValidacion(self.movimiento_service.stock_service)
 
     def _to_dict(self, instance):
         return {
@@ -31,79 +35,26 @@ class DetalleVentaService(BaseService):
         }
 
     def _calcular_subtotal(self, precio_venta, cantidad):
-        return (Decimal(precio_venta) * cantidad).quantize(Decimal("0.01"))
+        return self.calculo.calcular_subtotal(precio_venta, cantidad)
 
     def _precio_aplicable(self, producto, venta):
-        """Resuelve precio por sucursal si existe, sino fallback a Producto.precio_venta."""
-        sucursal_id = venta.id_sucursal_id if venta else None
-        precio = PrecioSucursalService.resolver_precio_venta(producto, sucursal_id)
-        return precio if precio is not None else producto.precio_venta
+        return self.calculo.precio_aplicable(producto, venta)
 
     def _recalcular_total(self, venta_id):
-        total = self.repository.sum_subtotales(venta_id)
-        venta = self.venta_repo.get_by_id(venta_id)
-        if venta:
-            venta.total = total
-            venta.save(update_fields=["total"])
-        return total
-
-    def _sucursal_id_de_venta(self, venta):
-        return getattr(venta, 'id_sucursal_id', None)
+        return self.calculo.recalcular_total(venta_id)
 
     def _validar_venta_operable(self, venta):
-        """Las operaciones por detalle exigen venta completada y con sucursal."""
-        if getattr(venta, 'estado', None) == 'cancelada':
-            raise ValueError(f"La venta {venta.id} está cancelada y no admite cambios")
-        if getattr(venta, 'id_sucursal_id', None) is None:
-            raise ValueError("La venta no tiene sucursal asignada")
+        return self.validacion.validar_venta_operable(venta)
 
-    def _sucursal_del_usuario(self, user):
-        perfil = getattr(user, 'perfil', None)
-        user_sucursal_id = None
-        if perfil is not None:
-            user_sucursal_id = getattr(perfil, 'id_sucursal_id', None)
-            # Si perfil no está cargado, intentar fetch
-            if user_sucursal_id is None:
-                try:
-                    # perfil podría ser DoesNotExist
-                    user_sucursal_id = perfil.id_sucursal_id
-                except Exception:
-                    user_sucursal_id = None
-        return user_sucursal_id
-
-    def _validar_cross_sucursal(self, user, venta):
-        user_sucursal_id = self._sucursal_del_usuario(user)
-        # Si el usuario es staff/superuser, bypass (operador global)
-        if user_sucursal_id is not None and not es_staff(user):
-            sucursal_venta_id = self._sucursal_id_de_venta(venta)
-            if sucursal_venta_id is not None and user_sucursal_id != sucursal_venta_id:
-                raise ValueError(
-                    f"La venta pertenece a la sucursal {sucursal_venta_id} y no puede ser operada por el usuario de la sucursal {user_sucursal_id}"
-                )
+    def _validar_cantidad(self, cantidad):
+        return self.validacion.validar_cantidad(cantidad)
 
     def _validar_producto_en_inventario_sucursal(self, producto, venta, user=None):
-        """Valida que el producto tenga stock >0 en la sucursal de la venta
-        y que el usuario pertenezca a la misma sucursal (si tiene perfil)."""
-        # Bloqueo cross-sucursal: si el usuario tiene perfil con sucursal, debe coincidir con la sucursal de la venta
-        if user is not None:
-            self._validar_cross_sucursal(user, venta)
-
-        # Validación producto en sucursal: stock >0
-        sucursal_id = self._sucursal_id_de_venta(venta)
-        stock = self.movimiento_service.get_stock(producto.id, sucursal_id)
-        if stock == 0:
-            raise ValueError(
-                f"El producto '{producto.nombre}' no está disponible en la sucursal {sucursal_id} - stock 0"
-            )
-
-    @staticmethod
-    def _validar_cantidad(cantidad):
-        if isinstance(cantidad, bool) or not isinstance(cantidad, int) or cantidad <= 0:
-            raise ValueError("La cantidad debe ser un entero mayor a cero")
+        return self.validacion.validar_producto_en_inventario_sucursal(
+            producto, venta, user=user
+        )
 
     def create(self, data, user=None):
-        from inventario.models import Stock as _Stock
-
         if "id_producto" not in data or "id_venta" not in data or "cantidad" not in data:
             raise ValueError("Faltan campos obligatorios: id_producto, id_venta, cantidad")
         self._validar_cantidad(data["cantidad"])
@@ -113,20 +64,17 @@ class DetalleVentaService(BaseService):
                 raise NotFoundError(f"Venta con id {data['id_venta']} no encontrado")
             self._validar_venta_operable(venta)
             try:
-                producto = Producto.objects.select_for_update().get(id=data["id_producto"])
+                producto = bloquear_producto(data["id_producto"])
             except (Producto.DoesNotExist, ValidationError, ValueError, TypeError):
                 raise NotFoundError(f"Producto con id {data['id_producto']} no encontrado")
             # Serializa la fila de stock de la venta para que dos ajustes
             # concurrentes no lean el mismo stock a la vez.
-            list(
-                _Stock.objects.select_for_update().filter(
-                    id_producto_id=producto.id,
-                    id_sucursal_id=venta.id_sucursal_id,
-                )
-            )
+            bloquear_stock(producto.id, venta.id_sucursal_id)
 
             self._validar_producto_en_inventario_sucursal(producto, venta, user=user)
-            self.movimiento_service._validar_salida(producto.id, venta.id_sucursal_id, data["cantidad"])
+            self.movimiento_service.validar_salida(
+                producto.id, venta.id_sucursal_id, data["cantidad"]
+            )
 
             data["id_venta"] = venta
             data["id_producto"] = producto
@@ -143,9 +91,6 @@ class DetalleVentaService(BaseService):
             return resultado
 
     def update(self, id, data, user=None):
-        from inventario.models import Stock as _Stock
-        from ventas.models import Venta as _Venta
-
         with transaction.atomic():
             detalle = self.repository.get_by_id(id)
             if not detalle:
@@ -153,8 +98,8 @@ class DetalleVentaService(BaseService):
             # Bloqueos espejando el camino atómico: la venta y las filas de
             # stock, para que dos ajustes concurrentes no lean el mismo stock.
             try:
-                _Venta.objects.select_for_update().get(id=detalle.id_venta_id)
-            except _Venta.DoesNotExist:
+                Venta.objects.select_for_update().get(id=detalle.id_venta_id)
+            except Venta.DoesNotExist:
                 raise NotFoundError(f"Venta con id {detalle.id_venta_id} no encontrado")
             venta = self.venta_repo.get_by_id(detalle.id_venta_id)
             if not venta:
@@ -165,15 +110,10 @@ class DetalleVentaService(BaseService):
             self._validar_cantidad(nueva_cantidad)
             nuevo_producto_id = data.get("id_producto", detalle.id_producto_id)
             try:
-                nuevo_producto = Producto.objects.select_for_update().get(id=nuevo_producto_id)
+                nuevo_producto = bloquear_producto(nuevo_producto_id)
             except Producto.DoesNotExist:
                 raise NotFoundError(f"Producto con id {nuevo_producto_id} no encontrado")
-            list(
-                _Stock.objects.select_for_update().filter(
-                    id_producto_id=nuevo_producto_id,
-                    id_sucursal_id=venta.id_sucursal_id,
-                )
-            )
+            bloquear_stock(nuevo_producto_id, venta.id_sucursal_id)
 
             # Si cambia producto, validar que el nuevo producto esté en el stock de la sucursal
             if nuevo_producto_id != detalle.id_producto_id:

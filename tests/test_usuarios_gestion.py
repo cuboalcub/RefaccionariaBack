@@ -60,12 +60,58 @@ class TestEncargadoCrea:
         perf = Perfil.objects.get(usuario__username="staff_nuevo")
         assert (perf.id_sucursal_id, perf.rol) == (suc.id, "encargado")
 
+    def test_staff_sin_sucursal_hereda_la_suya(self, api_client):
+        suc = SucursalFactory()
+        staff = UserFactory(is_staff=True)
+        Perfil.objects.create(usuario=staff, id_sucursal=suc, rol="admin")
+        api_client.force_authenticate(user=staff)
+        r = api_client.post(
+            "/api/users",
+            {"username": "hereda", "password": "testpass123"},
+            format="json",
+        )
+        assert r.status_code == 201, r.content
+        perf = Perfil.objects.get(usuario__username="hereda")
+        assert (perf.id_sucursal_id, perf.rol) == (suc.id, "cajero")
+        assert r.data["id_sucursal"] == suc.id
+        assert r.data["rol"] == "cajero"
+
+    def test_staff_sin_sucursal_propia_400(self, api_client, staff_user):
+        api_client.force_authenticate(user=staff_user)
+        r = api_client.post(
+            "/api/users",
+            {"username": "huerfano2", "password": "testpass123"},
+            format="json",
+        )
+        assert r.status_code == 400
+
+    def test_staff_edita_sucursal_y_rol(self, api_client, staff_user):
+        suc = SucursalFactory()
+        nuevo = UserFactory(username="editado")
+        api_client.force_authenticate(user=staff_user)
+        r = api_client.put(
+            f"/api/users/{nuevo.id}",
+            {"id_sucursal": suc.id, "rol": "encargado"},
+            format="json",
+        )
+        assert r.status_code == 200, r.content
+        perf = Perfil.objects.get(usuario=nuevo)
+        assert (perf.id_sucursal_id, perf.rol) == (suc.id, "encargado")
+        assert r.data["id_sucursal"] == suc.id
+        assert r.data["rol"] == "encargado"
+
     def test_staff_rol_invalido_400(self, api_client, staff_user):
+        suc = SucursalFactory()
         api_client.force_authenticate(user=staff_user)
         assert (
             api_client.post(
                 "/api/users",
-                {"username": "malrol", "password": "testpass123", "rol": "jefe"},
+                {
+                    "username": "malrol",
+                    "password": "testpass123",
+                    "id_sucursal": suc.id,
+                    "rol": "jefe",
+                },
                 format="json",
             ).status_code
             == 400
@@ -89,6 +135,24 @@ class TestEncargadoCrea:
             format="json",
         )
         assert r.status_code == 400
+
+
+@pytest.mark.django_db
+class TestLoginSucursal:
+    def test_login_incluye_sucursal_y_rol(self):
+        suc = SucursalFactory()
+        u = User.objects.create_user(username="login_suc", password="testpass123")
+        Perfil.objects.create(usuario=u, id_sucursal=suc, rol="cajero")
+
+        r = APIClient().post(
+            "/api/login",
+            {"username": "login_suc", "password": "testpass123"},
+            format="json",
+        )
+
+        assert r.status_code == 200
+        assert r.data["user"]["id_sucursal"] == suc.id
+        assert r.data["user"]["rol"] == "cajero"
 
 
 @pytest.mark.django_db

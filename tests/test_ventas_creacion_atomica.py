@@ -59,7 +59,7 @@ class TestCrearVentaCompleta:
                 ],
             }
         )
-        assert Decimal(res["total"]) == Decimal("230.00")
+        assert Decimal(res["total"]) == Decimal("266.80")
         assert len(res["detalles"]) == 2
         assert MovimientoInventarioService().get_stock(prod_a.id, inv.id) == 8
         assert MovimientoInventarioService().get_stock(prod_b.id, inv.id) == 9
@@ -228,7 +228,7 @@ class TestCrearVentaCompleta:
             format="json",
         )
         assert ok.status_code == 201
-        assert Decimal(ok.data["total"]) == Decimal("250.00")
+        assert Decimal(ok.data["total"]) == Decimal("290.00")
         assert len(ok.data["detalles"]) == 2
 
         n_ventas = Venta.objects.count()

@@ -32,11 +32,14 @@ class ReporteVentaService:
                     "subtotal": detalle.subtotal
                 })
 
+            iva = venta.iva or 0
             data.append({
                 "id": venta.id,
                 "fecha": venta.fecha,
                 "vendedor": f"{venta.id_usuario.first_name} {venta.id_usuario.last_name}" if venta.id_usuario and (venta.id_usuario.first_name or venta.id_usuario.last_name) else str(venta.id_usuario),
                 "metodo_pago": venta.id_metodo_pago.tipo if venta.id_metodo_pago else None,
+                "subtotal": venta.total - iva,
+                "iva": iva,
                 "total": venta.total,
                 "detalles": detalles
             })

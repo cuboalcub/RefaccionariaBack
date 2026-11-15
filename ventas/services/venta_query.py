@@ -1,10 +1,13 @@
 import math
+from decimal import Decimal
 
 from sucursales.models import Sucursal
 from ventas.repositories.venta_repository import VentaRepository
 
 
 def venta_to_dict(instance):
+    iva = instance.iva or Decimal(0)
+    total = instance.total or Decimal(0)
     return {
         "id": instance.id,
         "id_usuario": instance.id_usuario.id if instance.id_usuario else None,
@@ -12,7 +15,9 @@ def venta_to_dict(instance):
         "id_sucursal": instance.id_sucursal_id,
         "id_cliente": instance.id_cliente_id,
         "estado": instance.estado,
-        "total": str(instance.total),
+        "subtotal": str(total - iva),
+        "iva": str(iva),
+        "total": str(total),
         "fecha": instance.fecha.isoformat() if instance.fecha else None,
     }
 

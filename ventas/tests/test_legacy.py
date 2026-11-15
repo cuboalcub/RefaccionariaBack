@@ -94,7 +94,7 @@ class DetalleVentaServiceTestCase(TestCase):
         })
 
         self.venta.refresh_from_db()
-        self.assertEqual(str(self.venta.total), "450.00")
+        self.assertEqual(str(self.venta.total), "522.00")
 
     def test_total_venta_se_recalcula_al_actualizar_detalle(self):
         detalle_id = self.service.create({
@@ -106,7 +106,7 @@ class DetalleVentaServiceTestCase(TestCase):
         self.service.update(detalle_id, {"cantidad": 4})
 
         self.venta.refresh_from_db()
-        self.assertEqual(str(self.venta.total), "600.00")
+        self.assertEqual(str(self.venta.total), "696.00")
 
     def test_total_venta_se_recalcula_al_borrar_detalle(self):
         self.service.create({
@@ -123,7 +123,7 @@ class DetalleVentaServiceTestCase(TestCase):
         self.service.delete(detalle_id)
 
         self.venta.refresh_from_db()
-        self.assertEqual(str(self.venta.total), "300.00")
+        self.assertEqual(str(self.venta.total), "348.00")
 
     def test_borrar_detalle_restituye_stock(self):
         detalle_id = self.service.create({

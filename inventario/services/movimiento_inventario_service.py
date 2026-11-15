@@ -50,7 +50,7 @@ class MovimientoInventarioService(BaseService):
     def get_stock(self, producto_id, sucursal_id):
         return self.stock_service.get_stock(producto_id, sucursal_id)
 
-    def _validar_salida(self, producto_id, sucursal_id, cantidad):
+    def validar_salida(self, producto_id, sucursal_id, cantidad):
         return self.stock_service.validar_salida(producto_id, sucursal_id, cantidad)
 
     def get_stock_map_por_sucursal(self, sucursal_id):
