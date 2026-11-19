@@ -15,9 +15,9 @@ from tests.factories import SucursalFactory, UserFactory
 from usuario.models import Perfil
 
 
-def _auth(rol="cajero"):
+def _auth(rol="cajero", sucursal=None):
     user = UserFactory()
-    Perfil.objects.create(usuario=user, rol=rol)
+    Perfil.objects.create(usuario=user, rol=rol, id_sucursal=sucursal)
     client = APIClient()
     client.force_authenticate(user=user)
     return client
@@ -49,7 +49,7 @@ def _cliente(sucursal, **kw):
 class TestPermisosCajero:
     def test_cajero_puede_leer_y_crear(self, db):
         suc = SucursalFactory()
-        c = _auth("cajero")
+        c = _auth("cajero", suc)
         assert c.get("/api/clientes/").status_code == 200
         r = c.post("/api/clientes/", _payload(suc), format="json")
         assert r.status_code == 201
@@ -57,7 +57,7 @@ class TestPermisosCajero:
     def test_cajero_no_puede_editar_ni_borrar(self, db):
         suc = SucursalFactory()
         cid = _cliente(suc).id
-        c = _auth("cajero")
+        c = _auth("cajero", suc)
         assert c.put(f"/api/clientes/{cid}/", {"nombre": "X"}, format="json").status_code == 403
         assert c.delete(f"/api/clientes/{cid}/").status_code == 403
 
@@ -71,7 +71,7 @@ class TestPermisosCajero:
 class TestCamposObligatorios:
     def test_post_sin_nombre_400(self, db):
         suc = SucursalFactory()
-        c = _auth("encargado")
+        c = _auth("encargado", suc)
         r = c.post(
             "/api/clientes/",
             {"apellido_paterno": "B", "telefono": "1", "id_sucursal": suc.id},
@@ -82,7 +82,7 @@ class TestCamposObligatorios:
 
     def test_post_sin_apellido_paterno_400(self, db):
         suc = SucursalFactory()
-        c = _auth("encargado")
+        c = _auth("encargado", suc)
         r = c.post(
             "/api/clientes/",
             {"nombre": "A", "telefono": "1", "id_sucursal": suc.id},
@@ -93,7 +93,7 @@ class TestCamposObligatorios:
 
     def test_post_sin_telefono_400(self, db):
         suc = SucursalFactory()
-        c = _auth("encargado")
+        c = _auth("encargado", suc)
         r = c.post(
             "/api/clientes/",
             {"nombre": "A", "apellido_paterno": "B", "id_sucursal": suc.id},
@@ -182,3 +182,64 @@ class TestDetalle404:
         c = _auth("admin")
         assert c.put("/api/clientes/99999/", {"nombre": "X"}, format="json").status_code == 404
         assert c.delete("/api/clientes/99999/").status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Scoping por sucursal: listado, alta y detalle
+# ---------------------------------------------------------------------------
+
+
+def _staff_auth():
+    client = APIClient()
+    client.force_authenticate(user=UserFactory(is_staff=True))
+    return client
+
+
+@pytest.mark.django_db
+class TestScopingSucursal:
+    def test_listado_solo_sucursal_propia(self, db):
+        suc_a, suc_b = SucursalFactory(), SucursalFactory()
+        _cliente(suc_a)
+        _cliente(suc_b)
+        r = _auth("cajero", suc_a).get("/api/clientes/")
+        assert r.status_code == 200
+        assert [c["id_sucursal"] for c in r.data] == [suc_a.id]
+
+    def test_sin_sucursal_400(self, db):
+        assert _auth("cajero").get("/api/clientes/").status_code == 400
+
+    def test_staff_filtra_y_ve_todo(self, db):
+        suc_a, suc_b = SucursalFactory(), SucursalFactory()
+        _cliente(suc_a)
+        _cliente(suc_b)
+        c = _staff_auth()
+        assert len(c.get("/api/clientes/").data) == 2
+        r = c.get(f"/api/clientes/?sucursal_id={suc_a.id}")
+        assert [x["id_sucursal"] for x in r.data] == [suc_a.id]
+        assert c.get("/api/clientes/?sucursal_id=abc").status_code == 400
+
+    def test_post_fuerza_sucursal_propia(self, db):
+        suc_a, suc_b = SucursalFactory(), SucursalFactory()
+        r = _auth("encargado", suc_a).post(
+            "/api/clientes/", _payload(suc_b), format="json"
+        )
+        assert r.status_code == 201
+        assert r.data["id_sucursal"] == suc_a.id
+
+    def test_put_no_mueve_a_otra_sucursal(self, db):
+        suc_a, suc_b = SucursalFactory(), SucursalFactory()
+        cid = _cliente(suc_a).id
+        r = _auth("encargado", suc_a).put(
+            f"/api/clientes/{cid}/", {"id_sucursal": suc_b.id}, format="json"
+        )
+        assert r.status_code == 200
+        assert r.data["id_sucursal"] == suc_a.id
+
+    def test_detalle_otra_sucursal_403(self, db):
+        suc_a, suc_b = SucursalFactory(), SucursalFactory()
+        cid = _cliente(suc_b).id
+        c = _auth("encargado", suc_a)
+        assert c.get(f"/api/clientes/{cid}/").status_code == 403
+        assert c.put(f"/api/clientes/{cid}/", {"nombre": "X"}, format="json").status_code == 403
+        assert c.delete(f"/api/clientes/{cid}/").status_code == 403
+

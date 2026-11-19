@@ -5,6 +5,7 @@ from unittest.mock import Mock, patch
 import pytest
 from django.contrib.auth.models import User
 from django.core.exceptions import ObjectDoesNotExist, ValidationError
+from rest_framework.test import APIClient
 
 from repository.base_service import BaseService
 from repository.base_repository import BaseRepository
@@ -731,15 +732,21 @@ class TestClienteAPI:
         r = jwt_client.post("/api/clientes/", self._payload(sucursal), format="json")
         assert r.status_code == 201
 
-    def test_validaciones(self, auth_client, perfil, sucursal):
+    def test_validaciones(self, auth_client, perfil, sucursal, staff_user):
         perfil.rol = "encargado"
         perfil.save(update_fields=["rol"])
+        # No-staff: la sucursal sale del perfil; el body no puede cambiarla.
         bad = {"nombre": "A", "apellido_paterno": "B", "telefono": "1"}
-        assert auth_client.post("/api/clientes/", bad, format="json").status_code == 400
+        assert auth_client.post("/api/clientes/", bad, format="json").status_code == 201
         bad2 = dict(bad, id_sucursal=99999)
-        assert auth_client.post("/api/clientes/", bad2, format="json").status_code == 400
+        assert auth_client.post("/api/clientes/", bad2, format="json").status_code == 201
+        assert auth_client.post("/api/clientes/", {"nombre": "A"}, format="json").status_code == 400
+        # Staff sí puede elegir sucursal, por eso la inválida se rechaza.
+        staff_client = APIClient()
+        staff_client.force_authenticate(user=staff_user)
+        assert staff_client.post("/api/clientes/", bad2, format="json").status_code == 400
         c = make_cliente(sucursal)
-        assert auth_client.put(f"/api/clientes/{c.id}/", {"id_sucursal": 99999}, format="json").status_code == 400
+        assert auth_client.put(f"/api/clientes/{c.id}/", {"id_sucursal": 99999}, format="json").status_code == 200
         assert auth_client.get("/api/clientes/99999/").status_code == 404
 
 

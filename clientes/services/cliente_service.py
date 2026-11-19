@@ -8,6 +8,11 @@ class ClienteService(BaseService):
     def __init__(self):
         super().__init__(model=Cliente, repository=ClienteRepository())
 
+    def get_all(self, sucursal_id=None):
+        if sucursal_id is None:
+            return super().get_all()
+        return self.get_by_filters({"id_sucursal_id": sucursal_id})
+
     def _validar(self, data):
         if "id_sucursal" not in data or data["id_sucursal"] is None:
             raise ValueError("Faltan campos obligatorios: id_sucursal")
