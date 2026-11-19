@@ -1,6 +1,6 @@
 # Módulo catálogos — reporte de validación
 
-Alcance: productos, tipos, proveedores, clientes, sucursales (globales, sin scoping por sucursal por decisión Fase 1).
+Alcance: productos, tipos, proveedores, clientes, sucursales (productos, tipos, proveedores y sucursales globales; clientes acotados por sucursal).
 
 ## Archivos inspeccionados
 `producto/controllers/{producto,tipo,proveedor}_controller.py`, `clientes/controllers/cliente_controller.py`,
@@ -16,5 +16,5 @@ Alcance: productos, tipos, proveedores, clientes, sucursales (globales, sin scop
 - Aprobadas todas, fallidas 0, omitidas 0.
 
 ## Riesgos y pendientes
-- Catálogos globales: un cajero ve productos/clientes de todas las sucursales (decisión consciente; reevaluar si hay datos sensibles por sucursal).
+- Clientes acotados por sucursal: no-staff solo lista/crea/edita clientes de su sucursal (sin sucursal → 400, otra sucursal → 403); staff puede filtrar con `?sucursal_id` o ver todos.
 - Precios siguen siendo el mecanismo de diferenciación por sucursal, ya acotado (ver REPORT_inventario).

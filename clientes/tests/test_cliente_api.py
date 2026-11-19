@@ -13,8 +13,8 @@ class ClienteAPITest(TestCase):
         self.client = APIClient()
         self.user = User.objects.create_user(username='testuser', password='testpass123')
         self.client.force_authenticate(user=self.user)
-        Perfil.objects.create(usuario=self.user, rol='encargado')
         self.sucursal = Sucursal.objects.create(ubicacion='Sucursal Centro')
+        Perfil.objects.create(usuario=self.user, rol='encargado', id_sucursal=self.sucursal)
         self.cliente_data = {
             'nombre': 'Juan',
             'apellido_paterno': 'Pérez',

@@ -76,6 +76,10 @@ python manage.py runserver
 - `POST /api/detalles-inventario/bulk/` genera **un movimiento por línea** (se eliminó el movimiento compartido). Acepta lista plana, `{"items": [...]}`, o `{"detalles": [...]}` con cabecera común (`id_sucursal`, `id_proveedor`, `tipo_movimiento`, `razon`, `observaciones`).
 - `PUT` reajusta el stock por diferencia y permite mover producto/sucursal; `DELETE` revierte el delta.
 
+### Clientes
+- `GET /api/clientes/` filtra por sucursal: no-staff solo ve la suya (sin sucursal → 400); staff puede usar `?sucursal_id=<id>` o ver todos.
+- `POST /api/clientes/` toma `id_sucursal` del perfil del usuario; no-staff no puede asignar otra sucursal. `PUT`/`DELETE`/`GET` por id también quedan acotados (otra sucursal → 403).
+
 ### Ventas
 - `POST /api/ventas/` **ignora** `total`, `id_usuario` e `id_inventario` enviados por el cliente. `id_usuario` y sucursal se toman automáticamente del JWT/perfil (`Authorization: Bearer <access_token>` → `Perfil.sucursal`). Solo recibe `id_metodo_pago` (más `detalles` opcional para creación atómica). El total se calcula automáticamente sumando los `subtotal` de sus detalles y agregando 16% de IVA (`total = subtotal + iva`). Staff/superuser puede enviar `sucursal_id` como override explícito. Sin JWT se exige `id_sucursal`; `id_inventario` ya no se mapea. Las respuestas exponen `id_sucursal` y `GET /api/ventas/` filtra por `sucursal_id`.
 - `POST /api/detalleventa/` (crear) está **deprecado** → `410 Gone`: crear siempre con `POST /api/ventas/` + `detalles` (atómico). `GET/PUT/DELETE` por unidad siguen vigentes; al ajustar/borrar el detalle, la salida se revierte (con locks de venta + stock).
@@ -90,7 +94,7 @@ python manage.py runserver
 ### Roles y sucursales
 - `Perfil.rol`: `cajero` (default) / `encargado` / `admin`. `is_staff` implica todo (`is_superuser` la implica). Sin perfil el rol es `cajero`.
 - Matriz: cajero vende y lee; encargado además anula ventas, escribe movimientos/bulk y precios, ve reporte y gestiona usuarios de su sucursal (crear cajeros, modificar datos/password/activo; no borra ni cambia roles ni sucursal); staff/admin además gestiona sucursales y puede reasignar `id_sucursal`/`rol` por `PUT /api/users/<id>`. El login expone `id_sucursal` y `rol`; el registro y `PUT /api/perfil/` ignoran el rol (sin auto-escalación).
-- Todo está acotado por sucursal (JWT/perfil, staff con override): otra sucursal → 403, sin sucursal → 400. Sin permiso de rol → 403. Movimientos y lectura de catálogos siguen globales.
+- Todo está acotado por sucursal (JWT/perfil, staff con override): otra sucursal → 403, sin sucursal → 400. Sin permiso de rol → 403. Movimientos y lectura de catálogos de productos siguen globales; los clientes se filtran por sucursal.
 ```
 RefaccionariaBack
 ├─ .opencode
