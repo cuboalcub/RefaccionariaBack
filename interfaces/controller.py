@@ -1,29 +1,51 @@
-from abc import ABC, abstractmethod
-from typing import Generic, TypeVar, List, Optional, Any
-from rest_framework.response import Response
-from django.db import models
+"""Module defining the base controller interface for the application."""
 
-T = TypeVar('T', bound=models.Model)
+from abc import ABC, abstractmethod
+from typing import Generic, TypeVar
+
+from django.db import models
+from rest_framework.response import Response
+
+T = TypeVar("T", bound=models.Model)
+
 
 class ListCreateControllerInterface(Generic[T], ABC):
+    """
+    Interface for controllers that handle listing and creating items.
+    """
+
     @abstractmethod
     def get(self, request) -> Response:
-        pass
+        """
+        Retrieve a list of items.
+        """
 
     @abstractmethod
     def post(self, request) -> Response:
-        pass
+        """
+        Create a new item.
+        """
 
 
 class DetailControllerInterface(Generic[T], ABC):
+    """
+    Interface for controllers that handle retrieving, updating, and deleting a single item.
+    """
+
     @abstractmethod
     def get(self, request, pk: int) -> Response:
-        pass
+        """
+        Retrieve a single item by its primary key.
+        """
 
     @abstractmethod
     def put(self, request, pk: int) -> Response:
-        pass
+        """
+        Update an existing item by its primary key.
+        """
 
     @abstractmethod
     def delete(self, request, pk: int) -> Response:
-        pass    
+        """
+        Delete an item by its primary key.
+        """

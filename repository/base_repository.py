@@ -1,4 +1,3 @@
-# repositories/base_repository.py
 from typing import Any
 from typing import List, Optional, Type, Dict
 from django.db import models
@@ -12,9 +11,9 @@ class BaseRepository(IRepository[models.Model]):
     def __init__(self, model_class: Type[models.Model]):
         self.model_class = model_class
 
-    def get_by_id(self, id: int) -> Optional[models.Model]:
+    def get_by_id(self, entity_id: int) -> Optional[models.Model]:
         try:
-            return self.model_class.objects.get(id=id)
+            return self.model_class.objects.get(id=entity_id)
         except ObjectDoesNotExist:
             return None
 
@@ -25,20 +24,16 @@ class BaseRepository(IRepository[models.Model]):
         return self.model_class.objects.create(**data)
 
     def update(self, entity: models.Model, data: Dict[str, Any]):
-        try:
-            for key, value in data.items():
-                setattr(entity, key, value)
-            entity.save()
-            return entity
-        except ObjectDoesNotExist:
-            return None
+        for key, value in data.items():
+            setattr(entity, key, value)
+        entity.save()
+        return entity
 
     def delete(self, entity: models.Model) -> bool:
-        try:
-            entity.delete()
-            return True
-        except ObjectDoesNotExist:
+        if not self.get_by_id(entity.pk):
             return False
+        entity.delete()
+        return True
 
     def filter(self,    data: Dict[str, Any]) -> List[models.Model]:
         return list(self.model_class.objects.filter(**data))
