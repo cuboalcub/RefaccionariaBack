@@ -75,7 +75,19 @@ class TestVentaToDict:
         assert d["id_sucursal"] is None
         assert d["id_usuario"] is None
         assert d["id_metodo_pago"] is None
+        assert d["vendedor"] is None
         assert d["fecha"] is not None
+
+    def test_vendedor_nombre_y_fallback_username(self):
+        user = UserFactory(first_name="Ana", last_name="Lopez")
+        v = Venta.objects.create(id_usuario=user, total=Decimal("1.00"))
+        assert VentaService()._to_dict(v)["vendedor"] == "Ana Lopez"
+
+        user.first_name = ""
+        user.last_name = ""
+        user.save()
+        v = Venta.objects.get(id=v.id)
+        assert VentaService()._to_dict(v)["vendedor"] == user.username
 
     def test_campos_nuevos_en_dict(self):
         inst = SimpleNamespace(
