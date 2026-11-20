@@ -4,6 +4,16 @@ from django.contrib.auth.models import User
 from sucursales.models import Sucursal
 
 
+class SesionActiva(models.Model):
+    usuario = models.OneToOneField(User, on_delete=models.CASCADE, related_name='sesion_activa')
+    session_jti = models.CharField(max_length=32, unique=True)
+    creada_en = models.DateTimeField(auto_now_add=True)
+    ultima_actividad = models.DateTimeField()
+
+    def __str__(self):
+        return f"{self.usuario.username}:{self.session_jti}"
+
+
 class Perfil(models.Model):
     class Rol(models.TextChoices):
         CAJERO = 'cajero', 'Cajero'

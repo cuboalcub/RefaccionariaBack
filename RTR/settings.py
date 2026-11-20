@@ -67,12 +67,19 @@ INSTALLED_APPS = [
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
-        "rest_framework_simplejwt.authentication.JWTAuthentication",
+        "usuario.authentication.SessionJWTAuthentication",
     ),
     "DEFAULT_PERMISSION_CLASSES": (
         "rest_framework.permissions.IsAuthenticated",
     ),
 }
+
+SIMPLE_JWT = {
+    "TOKEN_REFRESH_SERIALIZER": "usuario.serializers.SessionTokenRefreshSerializer",
+}
+
+SESSION_IDLE_MINUTES = 30
+SESSION_ACTIVITY_TOUCH_SECONDS = 60
 
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
