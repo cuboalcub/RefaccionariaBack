@@ -235,3 +235,93 @@ class UserServiceTestCase(TestCase):
         self.assertEqual(user_mock.is_superuser, False)
         self.assertEqual(user_mock.is_staff, False)
         self.assertEqual(user_mock.set_password.call_count, 0)
+
+    def test_login_inactive_returns_none(self):
+        User.objects.create_user(
+            username="inactivo", password="x", is_active=False
+        )
+        self.assertIsNone(self.service.login("inactivo", "x"))
+
+    def _sucursal(self):
+        return Sucursal.objects.create(ubicacion="Centro")
+
+    def test_create_user_email_duplicado(self):
+        suc = self._sucursal()
+        User.objects.create_user(
+            username="existente", email="dup@mail.com", password="x"
+        )
+        with self.assertRaises(ValueError) as cm:
+            self.service.create_user(
+                {
+                    "username": "nuevo",
+                    "password": "x",
+                    "email": "dup@mail.com",
+                    "id_sucursal": suc.id,
+                }
+            )
+        self.assertEqual(str(cm.exception), "El correo ya está registrado")
+
+    def test_create_user_email_duplicado_case_insensitive(self):
+        suc = self._sucursal()
+        User.objects.create_user(
+            username="existente2", email="dup@mail.com", password="x"
+        )
+        with self.assertRaises(ValueError):
+            self.service.create_user(
+                {
+                    "username": "nuevo2",
+                    "password": "x",
+                    "email": "DUP@Mail.com",
+                    "id_sucursal": suc.id,
+                }
+            )
+
+    def test_create_user_email_vacio_repetido_se_permite(self):
+        suc = self._sucursal()
+        self.service.create_user(
+            {"username": "sincorreo1", "password": "x", "id_sucursal": suc.id}
+        )
+        self.service.create_user(
+            {"username": "sincorreo2", "password": "x", "id_sucursal": suc.id}
+        )
+        self.assertEqual(User.objects.filter(email="").count(), 2)
+
+    def test_create_user_ignora_campos_privilegiados(self):
+        suc = self._sucursal()
+        self.service.create_user(
+            {
+                "username": "casiadmin",
+                "password": "x",
+                "id_sucursal": suc.id,
+                "is_staff": True,
+                "is_superuser": True,
+                "is_active": False,
+            }
+        )
+        user = User.objects.get(username="casiadmin")
+        self.assertFalse(user.is_staff)
+        self.assertFalse(user.is_superuser)
+        self.assertTrue(user.is_active)
+
+    def test_update_user_email_duplicado(self):
+        User.objects.create_user(username="a", email="a@mail.com", password="x")
+        target = User.objects.create_user(
+            username="b", email="b@mail.com", password="x"
+        )
+        with self.assertRaises(ValueError) as cm:
+            self.service.update_user(target.id, {"email": "a@mail.com"})
+        self.assertEqual(str(cm.exception), "El correo ya está registrado")
+
+    def test_update_user_mismo_email_se_permite(self):
+        target = User.objects.create_user(
+            username="c", email="c@mail.com", password="x"
+        )
+        out = self.service.update_user(target.id, {"email": "c@mail.com"})
+        self.assertEqual(out["email"], "c@mail.com")
+
+    def test_update_user_email_vacio_se_permite(self):
+        target = User.objects.create_user(
+            username="d", email="d@mail.com", password="x"
+        )
+        out = self.service.update_user(target.id, {"email": "  "})
+        self.assertEqual(out["email"], "")

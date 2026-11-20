@@ -19,12 +19,24 @@ class ClienteService(BaseService):
         if not Sucursal.objects.filter(id=data["id_sucursal"]).exists():
             raise ValueError("La sucursal indicada no existe")
 
+    @staticmethod
+    def _validar_longitudes(data):
+        for field in Cliente._meta.fields:
+            maximo = getattr(field, "max_length", None)
+            valor = data.get(field.name)
+            if maximo and isinstance(valor, str) and len(valor) > maximo:
+                raise ValueError(
+                    f"{field.name} no puede exceder {maximo} caracteres"
+                )
+
     def create(self, data):
         self._validar(data)
+        self._validar_longitudes(data)
         data["id_sucursal"] = Sucursal.objects.get(id=data["id_sucursal"])
         return super().create(data)
 
     def update(self, id, data):
+        self._validar_longitudes(data)
         if "id_sucursal" in data and data["id_sucursal"] is not None:
             if not Sucursal.objects.filter(id=data["id_sucursal"]).exists():
                 raise ValueError("La sucursal indicada no existe")
