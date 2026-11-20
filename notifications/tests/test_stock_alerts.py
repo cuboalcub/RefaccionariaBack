@@ -7,6 +7,7 @@ import pytest
 from inventario.services.movimiento_inventario_service import MovimientoInventarioService
 from notifications.models import Notification
 from notifications.services import stock_alerts
+from notifications.services.notification_service import NotificationService
 from notifications.services.stock_alerts import evaluar_stock, programar_evaluacion
 from tests.factories import (
     ProductoFactory,
@@ -129,6 +130,38 @@ class TestCiclo:
             ).count()
             == 2
         )
+
+    def test_listado_oculta_resueltas_al_recuperar(self, settings):
+        suc, inv, prod, u1, u2 = _ctx_con_usuarios(settings)
+        _entrada(prod, inv, 5)
+        evaluar_stock(prod.id, inv.id)
+        assert len(NotificationService().list_for_user(u1)) == 1
+
+        _entrada(prod, inv, 20)
+        evaluar_stock(prod.id, inv.id)
+
+        assert NotificationService().list_for_user(u1) == []
+
+    def test_listado_no_mezcla_low_y_out(self, settings):
+        suc, inv, prod, u1, u2 = _ctx_con_usuarios(settings)
+        _entrada(prod, inv, 5)
+        evaluar_stock(prod.id, inv.id)
+        MovimientoInventarioService().create(
+            {
+                "id_producto": prod.id,
+                "id_sucursal": inv.id,
+                "cantidad": 5,
+                "tipo_movimiento": "SALIDA",
+                "razon": "Venta",
+            }
+        )
+
+        res = evaluar_stock(prod.id, inv.id)
+
+        assert res["resueltas"] == 2
+        assert [n["tipo"] for n in NotificationService().list_for_user(u1)] == [
+            "error"
+        ]
 
     def test_reincidencia_crea_nueva(self, settings):
         suc, inv, prod, u1, u2 = _ctx_con_usuarios(settings)
