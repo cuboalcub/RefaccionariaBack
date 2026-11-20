@@ -595,3 +595,120 @@ class TestRolesFase2:
         assert r.status_code == 200
         assert r.data["rol"] == "cajero"
         assert r.data["rol"] != "admin"
+
+
+@pytest.mark.django_db
+class TestMovimientoSucursalAutomatica:
+    """POST /api/movimientos-inventario/ deriva la sucursal del perfil y
+    verifica que la enviada coincida; ENTRADA suma stock en esa sucursal."""
+
+    def _encargado(self, perfil):
+        perfil.rol = "encargado"
+        perfil.save(update_fields=["rol"])
+
+    def _post(self, client, prod, **extra):
+        data = {
+            "id_producto": prod.id,
+            "cantidad": 5,
+            "tipo_movimiento": "ENTRADA",
+            "razon": "Compra",
+        }
+        data.update(extra)
+        return client.post("/api/movimientos-inventario/", data, format="json")
+
+    def test_entrada_sin_sucursal_usa_perfil_y_suma_stock(self, auth_client, perfil):
+        self._encargado(perfil)
+        prod = ProductoFactory()
+        r = self._post(auth_client, prod, cantidad=5)
+        assert r.status_code == 201, r.content
+        assert r.data["id_sucursal"] == perfil.id_sucursal_id
+        r2 = self._post(auth_client, prod, cantidad=7)
+        assert r2.status_code == 201, r2.content
+        fila = Stock.objects.get(
+            id_sucursal_id=perfil.id_sucursal_id, id_producto=prod
+        )
+        assert fila.cantidad == 12
+
+    def test_sucursal_ajena_403_y_no_toca_stock(self, auth_client, perfil):
+        self._encargado(perfil)
+        otra = SucursalFactory()
+        prod = ProductoFactory()
+        r = self._post(auth_client, prod, id_sucursal=otra.id)
+        assert r.status_code == 403
+        assert not MovimientoInventario.objects.filter(id_producto=prod).exists()
+        assert not Stock.objects.filter(id_producto=prod, id_sucursal=otra).exists()
+
+    def test_sucursal_no_entera_400(self, auth_client, perfil):
+        self._encargado(perfil)
+        prod = ProductoFactory()
+        assert self._post(auth_client, prod, id_sucursal="abc").status_code == 400
+
+    def test_usuario_sin_sucursal_400(self, api_client):
+        u = UserFactory()
+        Perfil.objects.create(usuario=u, rol="encargado")
+        api_client.force_authenticate(user=u)
+        assert self._post(api_client, ProductoFactory()).status_code == 400
+
+    def test_staff_sin_sucursal_400_y_con_sucursal_201(self, api_client, staff_user, perfil):
+        api_client.force_authenticate(user=staff_user)
+        prod = ProductoFactory()
+        assert self._post(api_client, prod).status_code == 400
+        r = self._post(api_client, prod, id_sucursal=perfil.id_sucursal_id)
+        assert r.status_code == 201, r.content
+        assert r.data["id_sucursal"] == perfil.id_sucursal_id
+
+    def test_legacy_list_y_detail_scoped(self, auth_client, perfil):
+        self._encargado(perfil)
+        prod = ProductoFactory()
+        propio = self._post(auth_client, prod).data["id"]
+        from inventario.services.movimiento_inventario_service import (
+            MovimientoInventarioService,
+        )
+
+        otro = MovimientoInventarioService().create(
+            {
+                "id_producto": prod.id,
+                "id_sucursal": SucursalFactory().id,
+                "cantidad": 1,
+                "tipo_movimiento": "ENTRADA",
+            }
+        )
+        ids = [m["id"] for m in auth_client.get("/api/movimientos-inventario/").data]
+        assert propio in ids and otro["id"] not in ids
+        assert auth_client.get(f"/api/movimientos-inventario/{otro['id']}/").status_code == 403
+        assert auth_client.put(
+            f"/api/movimientos-inventario/{otro['id']}/",
+            {"cantidad": 2},
+            format="json",
+        ).status_code == 403
+        assert auth_client.delete(f"/api/movimientos-inventario/{otro['id']}/").status_code == 403
+
+
+@pytest.mark.django_db
+class TestBulkSucursalAutomatica:
+    def _encargado(self, perfil):
+        perfil.rol = "encargado"
+        perfil.save(update_fields=["rol"])
+
+    def test_bulk_sin_sucursal_usa_perfil_y_suma_stock(self, auth_client, perfil):
+        self._encargado(perfil)
+        p1, p2 = ProductoFactory(), ProductoFactory()
+        r = auth_client.post(
+            "/api/detalles-inventario/bulk/",
+            {
+                "tipo_movimiento": "ENTRADA",
+                "items": [
+                    {"id_producto": p1.id, "cantidad": 1},
+                    {"id_producto": p2.id, "cantidad": 2},
+                ],
+            },
+            format="json",
+        )
+        assert r.status_code == 201, r.content
+        assert {x["id_sucursal"] for x in r.data} == {perfil.id_sucursal_id}
+        assert Stock.objects.get(
+            id_producto=p1, id_sucursal_id=perfil.id_sucursal_id
+        ).cantidad == 1
+        assert Stock.objects.get(
+            id_producto=p2, id_sucursal_id=perfil.id_sucursal_id
+        ).cantidad == 2
