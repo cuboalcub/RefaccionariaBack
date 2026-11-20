@@ -183,3 +183,23 @@ class TestVentasAPI:
         assert resp.status_code == 200
         assert len(resp.data) == 1
         assert resp.data[0]["id_sucursal"] == perfil.id_sucursal_id
+
+    def test_get_ventas_incluye_vendedor(self, auth_client, user, perfil):
+        user.first_name, user.last_name = "Ana", "Lopez"
+        user.save()
+        otro = UserFactory(first_name="Luis", last_name="Diaz")
+        Perfil.objects.create(usuario=otro, id_sucursal=perfil.id_sucursal)
+        mp = MetodoPagoFactory()
+        for vendedor in (user, otro):
+            VentaService().create(
+                {
+                    "id_usuario": vendedor.id,
+                    "id_sucursal": perfil.id_sucursal_id,
+                    "id_metodo_pago": mp.id,
+                }
+            )
+
+        resp = auth_client.get("/api/ventas/")
+
+        assert resp.status_code == 200
+        assert {v["vendedor"] for v in resp.data} == {"Ana Lopez", "Luis Diaz"}
