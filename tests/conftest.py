@@ -1,15 +1,12 @@
 """Fixtures globales pytest-django: user, JWT/API clients, sucursal base."""
 
-from uuid import uuid4
-
 import pytest
 from django.contrib.auth.models import User
-from django.utils import timezone
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from sucursales.models import Sucursal
-from usuario.models import Perfil, SesionActiva
+from usuario.models import Perfil
 
 
 @pytest.fixture
@@ -55,11 +52,6 @@ def auth_client(api_client, user, perfil):
 @pytest.fixture
 def jwt_client(api_client, user, perfil):
     """APIClient autenticado vía JWT real (cubre SimpleJWT)."""
-    sid = uuid4().hex
     refresh = RefreshToken.for_user(user)
-    refresh["sid"] = sid
-    SesionActiva.objects.create(
-        usuario=user, session_jti=sid, ultima_actividad=timezone.now()
-    )
     api_client.credentials(HTTP_AUTHORIZATION=f"Bearer {refresh.access_token}")
     return api_client

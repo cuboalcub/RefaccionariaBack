@@ -89,9 +89,6 @@ python manage.py runserver
 ### Autenticación
 - La mayoría de los endpoints requieren el header `Authorization: Bearer <access_token>` (JWT).
 - Público: `POST /api/login`. El registro es cerrado: `POST /api/users` exige encargado (crea cajeros de su sucursal) o staff. Si un staff no envía `id_sucursal`, se hereda la de su propio perfil; si tampoco tiene, responde 400. Las respuestas de usuario y el login exponen `id_sucursal` y `rol`.
-- Sesión única por usuario: un login nuevo cierra la sesión anterior y sus tokens dejan de servir. La sesión expira tras 30 minutos sin actividad; access y refresh responden 401 al expirar.
-- `POST /api/logout` cierra la sesión y responde 204. Acepta el refresh en el body (`{"refresh": "..."}`) o un access válido en `Authorization`; es idempotente.
-- `POST /api/token/refresh` solo renueva access si la sesión sigue activa y actualiza la última actividad.
 - `PUT /api/users/<id>`: solo staff puede cambiar `id_sucursal` y `rol` (encargado los ignora). `DELETE /api/users/<id>` solo para usuarios staff.
 
 ### Roles y sucursales

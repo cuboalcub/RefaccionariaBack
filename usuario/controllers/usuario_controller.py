@@ -2,12 +2,8 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated, IsAdminUser
-from rest_framework_simplejwt.authentication import JWTAuthentication
-from rest_framework_simplejwt.exceptions import TokenError
-from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 
 from repository.permissions import exigir_permiso
-from usuario.models import SesionActiva
 from usuario.services.usuario_service import UserService
 
 PERMISO_GESTIONAR_USUARIOS = "usuarios.gestionar"
@@ -28,42 +24,6 @@ class UserLoginView(APIView):
         if user:
             return Response(user, status=status.HTTP_200_OK)
         return Response({"error": "Credenciales inválidas"}, status=status.HTTP_401_UNAUTHORIZED)
-
-
-class UserLogoutView(APIView):
-    authentication_classes = []
-    permission_classes = []
-
-    def post(self, request):
-        sid = self._sid_refresh(request.data.get("refresh"))
-        if sid is None:
-            sid = self._sid_access(request)
-        if sid:
-            SesionActiva.objects.filter(session_jti=sid).delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
-
-    @staticmethod
-    def _sid_refresh(raw_token):
-        if not raw_token:
-            return None
-        try:
-            return RefreshToken(raw_token).get("sid")
-        except TokenError:
-            return None
-
-    @staticmethod
-    def _sid_access(request):
-        auth = JWTAuthentication()
-        header = auth.get_header(request)
-        if header is None:
-            return None
-        raw_token = auth.get_raw_token(header)
-        if raw_token is None:
-            return None
-        try:
-            return AccessToken(raw_token).get("sid")
-        except TokenError:
-            return None
 
 
 class UserListCreateView(APIView):
