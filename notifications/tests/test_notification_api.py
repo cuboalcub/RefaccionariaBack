@@ -2,6 +2,7 @@
 
 import pytest
 from django.contrib.auth.models import User
+from django.utils import timezone
 
 from notifications.models import Notification
 from tests.factories import SucursalFactory, UserFactory
@@ -52,6 +53,20 @@ class TestList:
         assert set(item) == {"id", "titulo", "mensaje", "tipo", "leida", "creado_en"}
         assert item["leida"] is False
         assert item["tipo"] == "info"
+
+    def test_oculta_resueltas(self, api_client):
+        user_a, _ = _ctx()
+        _notif(user_a, titulo="Activa")
+        resuelta = _notif(
+            user_a, titulo="Resuelta", resuelta_en=timezone.now()
+        )
+        api_client.force_authenticate(user=user_a)
+
+        resp = api_client.get("/api/notifications/")
+
+        assert resp.status_code == 200
+        assert [n["titulo"] for n in resp.data] == ["Activa"]
+        assert Notification.objects.filter(id=resuelta.id).exists()
 
 
 @pytest.mark.django_db

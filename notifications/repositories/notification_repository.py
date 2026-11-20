@@ -10,9 +10,9 @@ class NotificationRepository(BaseRepository):
 
     def list_for_user(self, user_id: int) -> List[Notification]:
         return list(
-            self.model_class.objects.filter(destinatario_id=user_id).order_by(
-                "-creada_en", "-id"
-            )
+            self.model_class.objects.filter(
+                destinatario_id=user_id, resuelta_en__isnull=True
+            ).order_by("-creada_en", "-id")
         )
 
     def get_owned(self, notification_id: int, user_id: int) -> Optional[Notification]:

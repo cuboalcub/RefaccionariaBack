@@ -4,7 +4,7 @@ from rest_framework.permissions import IsAuthenticated
 from django.template.loader import render_to_string
 from django.http import HttpResponse
 from weasyprint import HTML
-from repository.permissions import exigir_permiso
+from repository.permissions import es_staff, exigir_permiso, sucursal_de_usuario
 from ventas.services.reporte_venta_service import ReporteVentaService
 
 from django.core.files.base import ContentFile
@@ -24,6 +24,15 @@ class ReporteVentaView(APIView):
         if not tipo:
             return HttpResponse("Debe enviar el parámetro 'tipo'", status=400)
 
+        if es_staff(request.user):
+            sucursal_id = None
+        else:
+            sucursal_id = sucursal_de_usuario(request.user)
+            if sucursal_id is None:
+                return HttpResponse(
+                    "El usuario no tiene una sucursal asignada", status=400
+                )
+
         service = ReporteVentaService()
 
         try:
@@ -31,7 +40,8 @@ class ReporteVentaView(APIView):
                 tipo=tipo,
                 year=int(year) if year else None,
                 month=int(month) if month else None,
-                quincena=int(quincena) if quincena else None
+                quincena=int(quincena) if quincena else None,
+                sucursal_id=sucursal_id
             )
         except ValueError as e:
             return HttpResponse(str(e), status=400)
