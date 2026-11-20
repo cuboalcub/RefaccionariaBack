@@ -1,3 +1,5 @@
+from decimal import Decimal, InvalidOperation
+
 from django.db.models import Q
 
 from producto.repositories.producto_repository import ProductoRepository
@@ -12,24 +14,57 @@ class ProductoService(BaseService):
         self.tipo_repo = tipo_repo or TipoRepository()
         self.proveedor_repo = proveedor_repo or ProveedorRepository()
 
+    def _validar(self, data, entity_id=None):
+        if "nombre" in data:
+            nombre = str(data.get("nombre") or "").strip()
+            if not nombre:
+                raise ValueError("nombre no puede estar vacío")
+            data["nombre"] = nombre
+
+        if "precio_venta" in data:
+            try:
+                precio = Decimal(str(data["precio_venta"]))
+            except (InvalidOperation, TypeError, ValueError):
+                raise ValueError("precio_venta debe ser numérico") from None
+            if precio < 0:
+                raise ValueError("precio_venta no puede ser negativo")
+
+        if "codigo_barras" in data:
+            codigo = str(data.get("codigo_barras") or "").strip()
+            if not codigo:
+                raise ValueError("codigo_barras no puede estar vacío")
+            qs = Producto.objects.filter(codigo_barras=codigo)
+            if entity_id is not None:
+                qs = qs.exclude(id=entity_id)
+            if qs.exists():
+                raise ValueError("Ya existe un producto con ese codigo_barras")
+            data["codigo_barras"] = codigo
+
+        for campo, repo in (
+            ("id_tipo", self.tipo_repo),
+            ("id_proveedor", self.proveedor_repo),
+        ):
+            if campo not in data:
+                continue
+            try:
+                obj = repo.get_by_id(data[campo])
+            except (TypeError, ValueError):
+                obj = None
+            if obj is None:
+                raise ValueError(f"{campo} no encontrado")
+            data[campo] = obj
+
     def create(self, data):
         data = dict(data)
-        if "id_tipo" not in data or data["id_tipo"] is None:
-            raise ValueError("Faltan campos obligatorios: id_tipo")
-        if "id_proveedor" not in data or data["id_proveedor"] is None:
-            raise ValueError("Faltan campos obligatorios: id_proveedor")
-        tipo = self.tipo_repo.get_by_id(data["id_tipo"])
-        proveedor = self.proveedor_repo.get_by_id(data["id_proveedor"])
-        data["id_tipo"] = tipo
-        data["id_proveedor"] = proveedor
+        for campo in ("id_tipo", "id_proveedor"):
+            if not data.get(campo):
+                raise ValueError(f"Faltan campos obligatorios: {campo}")
+        self._validar(data)
         return super().create(data)
 
     def update(self, id, data):
         data = dict(data)
-        if "id_tipo" in data:
-            data["id_tipo"] = self.tipo_repo.get_by_id(data["id_tipo"])
-        if "id_proveedor" in data:
-            data["id_proveedor"] = self.proveedor_repo.get_by_id(data["id_proveedor"])
+        self._validar(data, entity_id=id)
         return super().update(id, data)
 
     def get_all(self, page: int = None, page_size: int = 10, sucursal_id: int = None, search: str = None, clave: str = None, marca: str = None, codigo_barras: str = None, tipo_id: int = None, proveedor_id: int = None):

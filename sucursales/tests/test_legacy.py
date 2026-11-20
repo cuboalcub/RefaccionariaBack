@@ -9,7 +9,9 @@ class SucursalServiceTestCase(TestCase):
         self.service = SucursalService()
 
     def test_crear_sucursal(self):
-        resultado = self.service.create({"ubicacion": "Centro CDMX"})
+        resultado = self.service.create(
+            {"nombre_sucursal": "Centro", "ubicacion": "Centro CDMX"}
+        )
         self.assertIsNotNone(resultado["id"])
         self.assertEqual(resultado["ubicacion"], "Centro CDMX")
 

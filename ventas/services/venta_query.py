@@ -5,12 +5,20 @@ from sucursales.models import Sucursal
 from ventas.repositories.venta_repository import VentaRepository
 
 
+def _vendedor(usuario):
+    if not usuario:
+        return None
+    nombre = f"{getattr(usuario, 'first_name', '')} {getattr(usuario, 'last_name', '')}".strip()
+    return nombre or getattr(usuario, "username", None)
+
+
 def venta_to_dict(instance):
     iva = instance.iva or Decimal(0)
     total = instance.total or Decimal(0)
     return {
         "id": instance.id,
         "id_usuario": instance.id_usuario.id if instance.id_usuario else None,
+        "vendedor": _vendedor(instance.id_usuario),
         "id_metodo_pago": instance.id_metodo_pago.id if instance.id_metodo_pago else None,
         "id_sucursal": instance.id_sucursal_id,
         "id_cliente": instance.id_cliente_id,
