@@ -16,17 +16,22 @@ class VentaRepository(BaseRepository):
             qs = qs.filter(id_sucursal_id=sucursal_id)
         return qs
 
-    def get_ventas_por_rango(self, fecha_inicio, fecha_fin):
-
-        return (
+    def get_ventas_por_rango(self, fecha_inicio, fecha_fin, sucursal_id=None):
+        qs = (
             self.model_class.objects
             .filter(fecha__range=(fecha_inicio, fecha_fin), estado='completada')
             .select_related('id_usuario', 'id_metodo_pago')
             .prefetch_related('detalleventa_set__id_producto')
             .order_by('fecha')
         )
+        if sucursal_id is not None:
+            qs = qs.filter(id_sucursal_id=sucursal_id)
+        return qs
 
-    def get_total_ventas_por_rango(self, fecha_inicio, fecha_fin):
-        return self.model_class.objects.filter(
+    def get_total_ventas_por_rango(self, fecha_inicio, fecha_fin, sucursal_id=None):
+        qs = self.model_class.objects.filter(
             fecha__range=(fecha_inicio, fecha_fin), estado='completada'
-        ).aggregate(total_general=Sum('total'))['total_general'] or 0
+        )
+        if sucursal_id is not None:
+            qs = qs.filter(id_sucursal_id=sucursal_id)
+        return qs.aggregate(total_general=Sum('total'))['total_general'] or 0

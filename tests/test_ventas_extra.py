@@ -6,6 +6,7 @@ from unittest import mock
 
 import pytest
 from django.contrib.auth.models import AnonymousUser
+from rest_framework.test import APIClient
 
 from inventario.services.movimiento_inventario_service import MovimientoInventarioService
 from inventario.services.precio_sucursal_service import PrecioSucursalService
@@ -616,12 +617,34 @@ class TestReporteGenerar:
         row = next(x for x in rep["ventas"] if x["id"] == v.id)
         assert row["metodo_pago"] is None and row["detalles"] == []
 
+    def test_filtra_por_sucursal(self):
+        suc_a, _, _, user, mp, v_a, _ = _venta_con_stock()
+        suc_b = SucursalFactory()
+        v_b = Venta.objects.create(
+            id_usuario=user,
+            id_sucursal=suc_b,
+            id_metodo_pago=mp,
+            total=Decimal("500.00"),
+        )
+        svc = ReporteVentaService()
+
+        rep_a = svc.generar_reporte("day", sucursal_id=suc_a.id)
+        assert [x["id"] for x in rep_a["ventas"]] == [v_a["id"]]
+        assert rep_a["total_general"] == Decimal("232.00")
+
+        rep_b = svc.generar_reporte("day", sucursal_id=suc_b.id)
+        assert [x["id"] for x in rep_b["ventas"]] == [v_b.id]
+        assert rep_b["total_general"] == Decimal("500.00")
+
 
 # ---------------------------------------------------------- ReporteVentaView
 @pytest.mark.django_db
 class TestReporteView:
     def _auth(self, api_client, user):
-        Perfil.objects.update_or_create(usuario=user, defaults={"rol": "encargado"})
+        Perfil.objects.update_or_create(
+            usuario=user,
+            defaults={"rol": "encargado", "id_sucursal": SucursalFactory()},
+        )
         api_client.force_authenticate(user=user)
         return api_client
 
@@ -655,6 +678,58 @@ class TestReporteView:
                 {"tipo": "quincena", "year": "2026", "month": "5", "quincena": "1"},
             )
         assert resp.status_code == 200
+
+
+@pytest.mark.django_db
+class TestReporteViewScoping:
+    def _get(self, user):
+        client = APIClient()
+        client.force_authenticate(user=user)
+        captured = {}
+
+        def _fake_render(template, context):
+            captured.update(context)
+            return "<html/>"
+
+        with mock.patch(
+            "ventas.views.reporte_venta_view.render_to_string",
+            side_effect=_fake_render,
+        ), mock.patch("ventas.views.reporte_venta_view.HTML") as mhtml:
+            mhtml.return_value.write_pdf.return_value = b"%PDF-fake"
+            resp = client.get("/api/reporte/", {"tipo": "day"})
+        return resp, captured
+
+    def test_encargado_solo_ve_su_sucursal(self):
+        suc_a, suc_b = SucursalFactory(), SucursalFactory()
+        v_a = Venta.objects.create(id_sucursal=suc_a, total=Decimal("100.00"))
+        Venta.objects.create(id_sucursal=suc_b, total=Decimal("999.00"))
+        user = UserFactory()
+        Perfil.objects.create(usuario=user, id_sucursal=suc_a, rol="encargado")
+
+        resp, ctx = self._get(user)
+
+        assert resp.status_code == 200
+        assert [v["id"] for v in ctx["ventas"]] == [v_a.id]
+        assert ctx["total_general"] == Decimal("100.00")
+
+    def test_staff_ve_todas(self, staff_user):
+        suc_a, suc_b = SucursalFactory(), SucursalFactory()
+        v_a = Venta.objects.create(id_sucursal=suc_a, total=Decimal("100.00"))
+        v_b = Venta.objects.create(id_sucursal=suc_b, total=Decimal("999.00"))
+
+        resp, ctx = self._get(staff_user)
+
+        assert resp.status_code == 200
+        assert {v["id"] for v in ctx["ventas"]} == {v_a.id, v_b.id}
+        assert ctx["total_general"] == Decimal("1099.00")
+
+    def test_encargado_sin_sucursal_400(self):
+        user = UserFactory()
+        Perfil.objects.create(usuario=user, rol="encargado")
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        assert client.get("/api/reporte/", {"tipo": "day"}).status_code == 400
 
 
 # --------------------------------------------------------------- controllers
