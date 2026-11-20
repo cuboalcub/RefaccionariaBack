@@ -8,17 +8,21 @@ class ReporteVentaService:
     def __init__(self):
         self.venta_repository = VentaRepository()
 
-    def generar_reporte(self, tipo: str, year=None, month=None, quincena=None):
+    def generar_reporte(
+        self, tipo: str, year=None, month=None, quincena=None, sucursal_id=None
+    ):
         fecha_inicio, fecha_fin = self._calcular_rango(tipo, year, month, quincena)
 
         ventas = self.venta_repository.get_ventas_por_rango(
             fecha_inicio,
-            fecha_fin
+            fecha_fin,
+            sucursal_id=sucursal_id
         )
 
         total_general = self.venta_repository.get_total_ventas_por_rango(
             fecha_inicio,
-            fecha_fin
+            fecha_fin,
+            sucursal_id=sucursal_id
         )
 
         data = []
