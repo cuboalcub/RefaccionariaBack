@@ -10,6 +10,7 @@ from repository.permissions import (
     es_staff,
     exigir_misma_sucursal,
     exigir_permiso,
+    resolver_id_sucursal,
     sucursal_de_usuario,
 )
 
@@ -37,6 +38,31 @@ def _sucursales_en_bulk(data):
     return ids
 
 
+def _derivar_sucursal_bulk(data, user_suc):
+    """Copia el payload bulk y rellena con la sucursal del perfil donde falte."""
+    if isinstance(data, dict):
+        data = dict(data)
+        for key in ("items", "detalles"):
+            if isinstance(data.get(key), list):
+                data[key] = [
+                    {**it, "id_sucursal": user_suc}
+                    if isinstance(it, dict) and it.get("id_sucursal") is None
+                    else it
+                    for it in data[key]
+                ]
+        if data.get("id_sucursal") is None:
+            data["id_sucursal"] = user_suc
+        return data
+    if isinstance(data, list):
+        return [
+            {**it, "id_sucursal": user_suc}
+            if isinstance(it, dict) and it.get("id_sucursal") is None
+            else it
+            for it in data
+        ]
+    return data
+
+
 class DetalleInventarioListCreateView(BaseListController):
     def __init__(self):
         super().__init__(MovimientoInventarioService)
@@ -60,18 +86,9 @@ class DetalleInventarioListCreateView(BaseListController):
         try:
             exigir_permiso(request.user, PERM_INVENTARIO_ESCRIBIR)
             data = dict(request.data)
-            if not es_staff(request.user):
-                if data.get("id_sucursal") is not None:
-                    suc_id = entero_o_none(data.get("id_sucursal"))
-                    if suc_id is None:
-                        return Response(
-                            {"error": "id_sucursal debe ser entero"},
-                            status=status.HTTP_400_BAD_REQUEST,
-                        )
-                    data["id_sucursal"] = suc_id
-                exigir_misma_sucursal(
-                    request.user, data.get("id_sucursal"), "inventario"
-                )
+            suc_id = resolver_id_sucursal(request.user, data)
+            if suc_id is not None:
+                data["id_sucursal"] = suc_id
             item = self.service.create(data, user=request.user)
             return Response(item, status=status.HTTP_201_CREATED)
         except ValueError as e:
@@ -137,6 +154,13 @@ class DetalleInventarioBulkCreateView(APIView):
             service = MovimientoInventarioService()
             data = request.data
             if not es_staff(request.user):
+                user_suc = sucursal_de_usuario(request.user)
+                if user_suc is None:
+                    return Response(
+                        {"error": MSG_SIN_SUCURSAL},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                data = _derivar_sucursal_bulk(data, user_suc)
                 # Validación línea por línea vía sucursales mencionadas.
                 for suc_id in _sucursales_en_bulk(data):
                     ent = entero_o_none(suc_id)
