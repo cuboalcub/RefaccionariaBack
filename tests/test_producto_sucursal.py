@@ -89,6 +89,73 @@ class TestProductoService:
         res = ProductoService().update(p.id, {"marca": "Otra"})
         assert res["marca"] == "Otra"
 
+    @pytest.mark.parametrize(
+        "campo,valor",
+        [
+            ("nombre", " "),
+            ("precio_venta", "-1"),
+            ("precio_venta", "abc"),
+            ("codigo_barras", " "),
+        ],
+    )
+    def test_create_rechaza_campos_invalidos(self, campo, valor):
+        with pytest.raises(ValueError):
+            ProductoService().create(_producto_payload(**{campo: valor}))
+
+    def test_create_precio_cero_permitido(self):
+        res = ProductoService().create(_producto_payload(precio_venta="0.00"))
+        assert Decimal(res["precio_venta"]) == 0
+
+    def test_create_fk_inexistente_falla(self):
+        with pytest.raises(ValueError, match="id_tipo no encontrado"):
+            ProductoService().create(_producto_payload(id_tipo=999999))
+        with pytest.raises(ValueError, match="id_tipo no encontrado"):
+            ProductoService().create(_producto_payload(id_tipo="abc"))
+        with pytest.raises(ValueError, match="id_proveedor no encontrado"):
+            ProductoService().create(_producto_payload(id_proveedor=999999))
+
+    @pytest.mark.parametrize(
+        "campo,valor",
+        [
+            ("id_tipo", 999999),
+            ("id_tipo", None),
+            ("id_proveedor", 999999),
+            ("id_proveedor", None),
+        ],
+    )
+    def test_update_fk_inexistente_o_nula_falla(self, campo, valor):
+        p = ProductoFactory()
+        with pytest.raises(ValueError, match=f"{campo} no encontrado"):
+            ProductoService().update(p.id, {campo: valor})
+
+    @pytest.mark.parametrize(
+        "data",
+        [
+            {"nombre": " "},
+            {"precio_venta": "-1"},
+            {"precio_venta": "abc"},
+            {"codigo_barras": " "},
+        ],
+    )
+    def test_update_rechaza_campos_invalidos(self, data):
+        p = ProductoFactory()
+        with pytest.raises(ValueError):
+            ProductoService().update(p.id, data)
+
+    def test_codigo_barras_duplicado_rechazado(self):
+        ProductoFactory(codigo_barras="CB-DUP")
+        with pytest.raises(ValueError, match="codigo_barras"):
+            ProductoService().create(_producto_payload(codigo_barras="CB-DUP"))
+
+        otro = ProductoFactory(codigo_barras="CB-OTRO")
+        with pytest.raises(ValueError, match="codigo_barras"):
+            ProductoService().update(otro.id, {"codigo_barras": "CB-DUP"})
+
+    def test_update_codigo_barras_propio_permitido(self):
+        p = ProductoFactory(codigo_barras="CB-MIO")
+        res = ProductoService().update(p.id, {"codigo_barras": "CB-MIO"})
+        assert res["codigo_barras"] == "CB-MIO"
+
     def test_get_all_sin_sucursal_lista(self):
         ProductoFactory()
         ProductoFactory()
@@ -220,6 +287,22 @@ class TestTipoProveedor:
         with pytest.raises(Exception):
             svc.get_by_id(created["id"])
 
+    def test_tipo_nombre_vacio_y_duplicado(self):
+        svc = TipoService()
+        with pytest.raises(ValueError, match="nombre"):
+            svc.create({"nombre": " "})
+
+        tipo = svc.create({"nombre": "Unico"})
+        with pytest.raises(ValueError, match="Ya existe"):
+            svc.create({"nombre": "unico"})
+
+        otro = svc.create({"nombre": "Otro"})
+        with pytest.raises(ValueError, match="Ya existe"):
+            svc.update(tipo["id"], {"nombre": "Otro"})
+
+        assert svc.update(tipo["id"], {"nombre": "UNICO"})["nombre"] == "UNICO"
+        assert otro["nombre"] == "Otro"
+
     def test_proveedor_crud(self):
         svc = ProveedorService()
         created = svc.create({"nombre": "Prov", "direccion": "Calle 1",
@@ -350,6 +433,22 @@ class TestProductoControllers:
                    format="json")
         assert r.status_code == 400
 
+    def test_create_validaciones_400(self):
+        c = _auth()
+        ProductoFactory(codigo_barras="CB-CTRL-DUP")
+        base = _producto_payload(codigo_barras="CB-NUEVO")
+        invalidos = [
+            {**base, "nombre": " "},
+            {**base, "precio_venta": "-1"},
+            {**base, "precio_venta": "abc"},
+            {**base, "codigo_barras": " "},
+            {**base, "codigo_barras": "CB-CTRL-DUP"},
+            {**base, "id_tipo": 999999},
+            {**base, "id_proveedor": 999999},
+        ]
+        for payload in invalidos:
+            assert c.post("/api/productos/", payload, format="json").status_code == 400
+
     def test_detail_crud(self):
         c = _auth("encargado")
         pid = c.post("/api/productos/", _producto_payload(), format="json").json()["id"]
@@ -371,7 +470,7 @@ class TestProductoControllers:
         c = _auth("encargado")
         assert c.get("/api/tipos/").status_code == 200
         tid = c.post("/api/tipos/", {"nombre": "T1"}, format="json").json()["id"]
-        assert c.post("/api/tipos/", {"nombre": "T1"}, format="json").status_code == 201
+        assert c.post("/api/tipos/", {"nombre": "T1"}, format="json").status_code == 400
         assert c.get(f"/api/tipos/{tid}/").status_code == 200
         assert c.get("/api/tipos/999999/").status_code == 404
         assert c.put(f"/api/tipos/{tid}/", {"nombre": "T2"}, format="json").status_code == 200
@@ -399,7 +498,7 @@ class TestProductoControllers:
 class TestSucursal:
     def test_service_crud(self):
         svc = SucursalService()
-        created = svc.create({"ubicacion": "Ubi 1"})
+        created = svc.create({"nombre_sucursal": "Ubi 1", "ubicacion": "Ubi 1"})
         assert created["ubicacion"] == "Ubi 1"
         assert len(svc.get_all()) >= 1
         assert svc.get_by_id(created["id"])["ubicacion"] == "Ubi 1"
@@ -417,8 +516,19 @@ class TestSucursal:
     def test_controller_crud(self):
         c = _auth("admin")
         assert c.get("/api/sucursales/").status_code == 200
-        sid = c.post("/api/sucursales/", {"ubicacion": "S1"}, format="json").json()["id"]
-        assert c.post("/api/sucursales/", {"ubicacion": "S1"}, format="json").status_code == 201
+        sid = c.post(
+            "/api/sucursales/",
+            {"nombre_sucursal": "S1", "ubicacion": "S1"},
+            format="json",
+        ).json()["id"]
+        assert (
+            c.post(
+                "/api/sucursales/",
+                {"nombre_sucursal": "S1", "ubicacion": "Otra"},
+                format="json",
+            ).status_code
+            == 400
+        )
         assert c.get(f"/api/sucursales/{sid}/").status_code == 200
         assert c.get("/api/sucursales/999999/").status_code == 404
         assert c.put(f"/api/sucursales/{sid}/", {"ubicacion": "S2"}, format="json").status_code == 200
