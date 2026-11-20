@@ -243,3 +243,60 @@ class TestScopingSucursal:
         assert c.put(f"/api/clientes/{cid}/", {"nombre": "X"}, format="json").status_code == 403
         assert c.delete(f"/api/clientes/{cid}/").status_code == 403
 
+
+
+# ---------------------------------------------------------------------------
+# Longitudes: max_length del modelo validado antes de tocar la BD
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestLongitudes:
+    def test_post_telefono_largo_400(self, db):
+        suc = SucursalFactory()
+        c = _auth("encargado", suc)
+        r = c.post(
+            "/api/clientes/", _payload(suc, telefono="1" * 16), format="json"
+        )
+        assert r.status_code == 400
+        assert "telefono" in r.data["error"]
+
+    def test_post_nombre_largo_400(self, db):
+        suc = SucursalFactory()
+        c = _auth("encargado", suc)
+        r = c.post("/api/clientes/", _payload(suc, nombre="N" * 151), format="json")
+        assert r.status_code == 400
+        assert "nombre" in r.data["error"]
+
+    def test_put_telefono_largo_400(self, db):
+        suc = SucursalFactory()
+        cid = _cliente(suc).id
+        c = _auth("encargado", suc)
+        r = c.put(
+            f"/api/clientes/{cid}/", {"telefono": "1" * 16}, format="json"
+        )
+        assert r.status_code == 400
+
+    def test_service_create_telefono_largo_raises(self, db):
+        suc = SucursalFactory()
+        with pytest.raises(ValueError, match="telefono"):
+            ClienteService().create(
+                {
+                    "nombre": "A",
+                    "apellido_paterno": "B",
+                    "telefono": "1" * 16,
+                    "id_sucursal": suc.id,
+                }
+            )
+
+    def test_limite_exacto_se_permite(self, db):
+        suc = SucursalFactory()
+        out = ClienteService().create(
+            {
+                "nombre": "A",
+                "apellido_paterno": "B",
+                "telefono": "1" * 15,
+                "id_sucursal": suc.id,
+            }
+        )
+        assert out["telefono"] == "1" * 15

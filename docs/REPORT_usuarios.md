@@ -23,8 +23,11 @@
 - `GET /api/users` y detalle sin scoping: filtrados/403 por sucursal.
 - Alta de staff sin `id_sucursal` dejaba al usuario sin `Perfil` y no podía operar: ahora hereda la sucursal del creador (o 400) y el `Perfil` siempre se crea.
 - Inconsistencia admin (`is_superuser` vs `IsAdminUser→is_staff`): documentada; negocio usa `is_staff`.
+- `is_active=False` permitía login por password: ahora `/api/login` responde 401 (refresh JWT ya lo rechazaba).
+- Correos duplicados en alta/edición: se validan case-insensitive (400); vacío sigue permitido.
+- Escalada de privilegios en alta: se descartan `is_staff`/`is_superuser`/`is_active` del payload.
 
 ## Riesgos y pendientes
 - Reasignación de `rol`/sucursal por staff vía API: auditar quién la ejecuta (sin log de cambios todavía).
 - Arranque: primer staff vía `createsuperuser`; sin él nadie da de alta.
-- `is_active=False` no bloquea `login()` por password (solo JWT lo rechaza): decidir si endurecer.
+- Unicidad de correo solo a nivel aplicación (sin índice en BD): dos altas concurrentes podrían duplicar.

@@ -9,6 +9,8 @@ from repository.base_service import BaseService
 from repository.permissions import es_staff, rol_de_usuario, sucursal_de_usuario
 from sucursales.models import Sucursal
 
+CAMPOS_ALTA_USUARIO = {"username", "email", "password", "first_name", "last_name"}
+
 
 class UserService(BaseService):
 
@@ -17,7 +19,7 @@ class UserService(BaseService):
 
     def login(self, username, password):
         user = self.repository.get_by_username(username)
-        if user and user.check_password(password):
+        if user and user.is_active and user.check_password(password):
             refresh = RefreshToken.for_user(user)
             return {
                 "refresh": str(refresh),
@@ -33,6 +35,20 @@ class UserService(BaseService):
             }
         return None
 
+    @staticmethod
+    def _validar_email_unico(email, excluir_id=None):
+        # shortcut: unicidad solo en app (sin índice en BD); añadir índice
+        # único case-insensitive si se requiere cubrir concurrencia.
+        email = (email or "").strip()
+        if not email:
+            return ""
+        qs = User.objects.filter(email__iexact=email)
+        if excluir_id is not None:
+            qs = qs.exclude(pk=excluir_id)
+        if qs.exists():
+            raise ValueError("El correo ya está registrado")
+        return email
+
     def create_user(self, user_data, actor=None):
         user_data = dict(user_data)
         if 'username' not in user_data or 'password' not in user_data:
@@ -43,6 +59,12 @@ class UserService(BaseService):
 
         id_sucursal = user_data.pop('id_sucursal', None) or None
         rol = user_data.pop('rol', None) or None
+        # Solo campos de perfil editables: nunca is_staff/is_superuser.
+        user_data = {
+            k: v for k, v in user_data.items() if k in CAMPOS_ALTA_USUARIO
+        }
+        if "email" in user_data:
+            user_data["email"] = self._validar_email_unico(user_data["email"])
         if actor is not None and not es_staff(actor):
             # Encargado: solo cajeros de su propia sucursal (fail-closed).
             actor_suc = sucursal_de_usuario(actor)
@@ -106,6 +128,12 @@ class UserService(BaseService):
             actor_suc = sucursal_de_usuario(actor)
             if obj_suc is None or actor_suc is None or obj_suc != actor_suc:
                 raise PermissionDenied("No tiene acceso a usuarios de otra sucursal")
+
+        user_data = dict(user_data)
+        if "email" in user_data:
+            user_data["email"] = self._validar_email_unico(
+                user_data["email"], excluir_id=user.id
+            )
 
         puede_asignar = actor is None or es_staff(actor)
         editable_fields = {"username", "email", "first_name", "last_name", "is_active", "password"}

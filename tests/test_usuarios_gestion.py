@@ -250,3 +250,91 @@ class TestEncargadoListaYDetalle:
         Perfil.objects.create(usuario=ajeno, id_sucursal=otra, rol="cajero")
         assert c.get(f"/api/users/{ajeno.id}").status_code == 403
         assert c.get("/api/users/999999").status_code == 404
+
+
+@pytest.mark.django_db
+class TestEndurecimientoLoginYAlta:
+    def test_login_inactivo_401_y_refresh_401(self):
+        from rest_framework_simplejwt.tokens import RefreshToken
+
+        u = User.objects.create_user(
+            username="inactivo_login", password="testpass123", is_active=False
+        )
+        c = APIClient()
+        r = c.post(
+            "/api/login",
+            {"username": "inactivo_login", "password": "testpass123"},
+            format="json",
+        )
+        assert r.status_code == 401
+        assert "access" not in r.data and "refresh" not in r.data
+        r2 = c.post(
+            "/api/token/refresh",
+            {"refresh": str(RefreshToken.for_user(u))},
+            format="json",
+        )
+        assert r2.status_code == 401
+
+    def test_encargado_no_escala_privilegios_en_alta(self):
+        suc = SucursalFactory()
+        enc = _encargado(suc)
+        r = _auth(enc).post(
+            "/api/users",
+            {
+                "username": "casi_admin_api",
+                "password": "testpass123",
+                "is_staff": True,
+                "is_superuser": True,
+            },
+            format="json",
+        )
+        assert r.status_code == 201, r.content
+        u = User.objects.get(username="casi_admin_api")
+        assert u.is_staff is False and u.is_superuser is False
+
+    def test_alta_email_duplicado_400(self, api_client, staff_user):
+        suc = SucursalFactory()
+        UserFactory(email="dup@mail.com")
+        api_client.force_authenticate(user=staff_user)
+        r = api_client.post(
+            "/api/users",
+            {
+                "username": "dup_uno",
+                "password": "testpass123",
+                "email": "dup@mail.com",
+                "id_sucursal": suc.id,
+            },
+            format="json",
+        )
+        assert r.status_code == 400
+        assert "correo" in r.data["error"]
+        r2 = api_client.post(
+            "/api/users",
+            {
+                "username": "dup_dos",
+                "password": "testpass123",
+                "email": "DUP@MAIL.COM",
+                "id_sucursal": suc.id,
+            },
+            format="json",
+        )
+        assert r2.status_code == 400
+
+    def test_edicion_email_duplicado_400(self, api_client, staff_user):
+        UserFactory(email="ocupado@mail.com")
+        objetivo = UserFactory(username="edit_email", email="libre@mail.com")
+        api_client.force_authenticate(user=staff_user)
+        r = api_client.put(
+            f"/api/users/{objetivo.id}",
+            {"email": "ocupado@mail.com"},
+            format="json",
+        )
+        assert r.status_code == 400
+        assert (
+            api_client.put(
+                f"/api/users/{objetivo.id}",
+                {"email": "libre@mail.com"},
+                format="json",
+            ).status_code
+            == 200
+        )
