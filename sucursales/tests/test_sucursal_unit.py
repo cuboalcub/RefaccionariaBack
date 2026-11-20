@@ -49,23 +49,34 @@ class TestModelCodigoSucursal:
 
 
 # ---------------------------------------------------------------------------
-# Service: _to_dict expone solo id + ubicacion
+# Service: _to_dict expone todos los campos de la sucursal
 # ---------------------------------------------------------------------------
+
+CAMPOS_SUCURSAL = {
+    "id",
+    "nombre_sucursal",
+    "codigo_sucursal",
+    "ubicacion",
+    "codigo_postal",
+    "numero_telefono",
+    "correo_electronico",
+}
 
 
 @pytest.mark.django_db
 class TestServiceDict:
-    def test_create_devuelve_solo_id_y_ubicacion(self):
+    def test_create_devuelve_todos_los_campos(self):
         res = SucursalService().create({"ubicacion": "Norte 10"})
-        assert set(res.keys()) == {"id", "ubicacion"}
+        assert set(res.keys()) == CAMPOS_SUCURSAL
         assert res["ubicacion"] == "Norte 10"
 
-    def test_get_by_id_no_expone_codigo(self):
+    def test_get_by_id_expone_todos_los_campos(self):
         svc = SucursalService()
         created = svc.create({"ubicacion": "Sur"})
         res = svc.get_by_id(created["id"])
-        assert "codigo_sucursal" not in res
-        assert "nombre_sucursal" not in res
+        assert set(res.keys()) == CAMPOS_SUCURSAL
+        assert res["codigo_sucursal"] == created["codigo_sucursal"]
+        assert res["nombre_sucursal"] == ""
 
 
 # ---------------------------------------------------------------------------
@@ -77,7 +88,13 @@ class TestServiceDict:
 class TestPermisosController:
     def test_cajero_leer_ok_admin_403(self):
         c = _auth("cajero")
-        assert c.get("/api/sucursales/").status_code == 200
+        SucursalService().create(
+            {"nombre_sucursal": "Oriente", "ubicacion": "Oriente 1"}
+        )
+        r = c.get("/api/sucursales/")
+        assert r.status_code == 200
+        assert set(r.json()[0].keys()) == CAMPOS_SUCURSAL
+        assert r.json()[0]["nombre_sucursal"] == "Oriente"
         assert c.post("/api/sucursales/", {"ubicacion": "X"}, format="json").status_code == 403
 
     def test_encargado_sin_sucursales_admin(self):
@@ -122,9 +139,8 @@ class TestControllerEdge:
         assert r.status_code == 200
         assert SucursalService().get_by_id(sid)["ubicacion"] == "Original"
 
-    def test_respuesta_detalle_no_expone_codigo_sucursal(self):
+    def test_respuesta_detalle_expone_todos_los_campos(self):
         c = _auth("cajero")
         sid = SucursalService().create({"ubicacion": "Visible"})["id"]
         data = c.get(f"/api/sucursales/{sid}/").json()
-        assert "codigo_sucursal" not in data
-        assert set(data.keys()) == {"id", "ubicacion"}
+        assert set(data.keys()) == CAMPOS_SUCURSAL
