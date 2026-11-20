@@ -139,3 +139,24 @@ def exigir_misma_sucursal(user, sucursal_recurso, recurso="recurso"):
         raise ValueError("El usuario no tiene una sucursal asignada")
     if sucursal_recurso is not None and sucursal_recurso != user_suc:
         raise PermissionDenied(f"No tiene acceso a {recurso} de otra sucursal")
+
+
+def resolver_id_sucursal(user, data):
+    """Sucursal efectiva de un movimiento: valida la enviada o usa el perfil.
+
+    - Staff: devuelve el id del payload o None (el servicio lo exige).
+    - No staff con id: debe ser entero y su sucursal (403 si no).
+    - No staff sin id: toma la de su perfil (400 si no tiene).
+    """
+    if data.get("id_sucursal") is not None:
+        suc_id = entero_o_none(data.get("id_sucursal"))
+        if suc_id is None:
+            raise ValueError("id_sucursal debe ser entero")
+        exigir_misma_sucursal(user, suc_id, "inventario")
+        return suc_id
+    if es_staff(user):
+        return None
+    suc_id = sucursal_de_usuario(user)
+    if suc_id is None:
+        raise ValueError("El usuario no tiene una sucursal asignada")
+    return suc_id
