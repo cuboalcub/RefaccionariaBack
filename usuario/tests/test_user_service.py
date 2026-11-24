@@ -2,7 +2,7 @@ from django.contrib.auth.models import User
 from django.test import TestCase
 from unittest.mock import patch, MagicMock
 from usuario.services.usuario_service import UserService
-from usuario.models import Perfil
+from usuario.models import Perfil, SesionActiva
 from sucursales.models import Sucursal
 
 
@@ -20,27 +20,20 @@ class UserServiceTestCase(TestCase):
             "is_staff": False
         }
 
-    @patch("usuario.services.usuario_service.UserRepository.get_by_username")
-    @patch("usuario.services.usuario_service.RefreshToken")
-    def test_login_success(self, mock_refresh, mock_get_by_username):
+    def test_login_success(self):
         """Test para que el login funcione correctamente"""
-        user_mock = MagicMock()
-        user_mock.check_password.return_value = True
-        user_mock.id = self.user_data["id"]
-        user_mock.is_superuser = self.user_data["is_superuser"]
-        user_mock.is_staff = self.user_data["is_staff"]
-
-        mock_get_by_username.return_value = user_mock
-
-        token_mock = MagicMock()
-        token_mock.access_token = "access123"
-        mock_refresh.for_user.return_value = token_mock
+        user = User.objects.create_user(username="miguel", password="eldenring")
 
         result = self.service.login("miguel", "eldenring")
         self.assertIsNotNone(result)
         self.assertIn("refresh", result)
         self.assertIn("access", result)
-        self.assertEqual(result["user"]["id"], 1)
+        self.assertEqual(result["user"]["id"], user.id)
+        self.assertTrue(
+            SesionActiva.objects.filter(
+                usuario=user, session_jti__isnull=False
+            ).exists()
+        )
 
     @patch("usuario.services.usuario_service.UserRepository.get_by_username")
     def test_login_wrong_password_returns_none(self, mock_get_by_username):
