@@ -1,5 +1,9 @@
+import re
+import unicodedata
 from decimal import Decimal, InvalidOperation
+from uuid import uuid4
 
+from django.db import transaction
 from django.db.models import Q
 
 from producto.repositories.producto_repository import ProductoRepository
@@ -8,6 +12,18 @@ from repository.base_service import BaseService
 from producto.repositories.tipo_repository import TipoRepository
 from producto.repositories.proveedor_repository import ProveedorRepository
 
+
+def _codigo(texto, largo=3):
+    """Código corto en mayúsculas, sin acentos ni símbolos (Filtro -> FIL)."""
+    limpio = (
+        unicodedata.normalize("NFKD", str(texto or ""))
+        .encode("ascii", "ignore")
+        .decode()
+    )
+    limpio = re.sub(r"[^A-Za-z0-9]", "", limpio).upper()
+    return limpio[:largo] or "GEN"
+
+
 class ProductoService(BaseService):
     def __init__(self, producto_repo=None, tipo_repo=None, proveedor_repo=None):
         super().__init__(model=Producto, repository=producto_repo or ProductoRepository())
@@ -15,6 +31,10 @@ class ProductoService(BaseService):
         self.proveedor_repo = proveedor_repo or ProveedorRepository()
 
     def _validar(self, data, entity_id=None):
+        sku = data.pop("sku", None)
+        if sku is not None and not str(data.get("clave") or "").strip():
+            data["clave"] = sku
+
         if "nombre" in data:
             nombre = str(data.get("nombre") or "").strip()
             if not nombre:
@@ -60,7 +80,20 @@ class ProductoService(BaseService):
             if not data.get(campo):
                 raise ValueError(f"Faltan campos obligatorios: {campo}")
         self._validar(data)
-        return super().create(data)
+        if str(data.get("clave") or "").strip():
+            return super().create(data)
+
+        categoria = _codigo(data["id_tipo"].nombre)
+        marca = _codigo(data.get("marca"))
+        with transaction.atomic():
+            # El id (autoincremental) da el consecutivo único sin carreras.
+            data["clave"] = f"TMP-{uuid4().hex}"
+            obj = super().create(data)
+            clave = f"{categoria}-{marca}-{obj['id']:04d}"
+            Producto.objects.filter(pk=obj["id"]).update(clave=clave)
+            obj["clave"] = clave
+            obj["sku"] = clave
+        return obj
 
     def update(self, id, data):
         data = dict(data)
@@ -166,6 +199,7 @@ class ProductoService(BaseService):
             "id_tipo": instance.id_tipo.id if instance.id_tipo else None,
             "id_proveedor": instance.id_proveedor.id if instance.id_proveedor else None,
             "clave": instance.clave,
+            "sku": instance.clave,
             "nombre": instance.nombre,
             "descripcion": instance.descripcion,
             "codigo_barras": instance.codigo_barras,
