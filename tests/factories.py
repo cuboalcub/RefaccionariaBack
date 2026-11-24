@@ -1,5 +1,7 @@
 """Factories factory_boy para inventario/ventas (patrón django-tdd)."""
 
+from decimal import Decimal
+
 import factory
 from factory import fuzzy
 from django.contrib.auth.models import User
@@ -9,6 +11,7 @@ from inventario.models import Stock, MovimientoInventario
 from producto.models import Tipo, Proveedor, Producto
 from ventas.models import MetodoPago
 from usuario.models import Perfil
+from clientes.models import Cliente, Adeudo, AbonoAdeudo
 
 
 class SucursalFactory(factory.django.DjangoModelFactory):
@@ -93,3 +96,30 @@ class MetodoPagoFactory(factory.django.DjangoModelFactory):
 
     tipo = "EFECTIVO"
     descripcion = "Pago en efectivo"
+
+
+class ClienteFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = Cliente
+
+    id_sucursal = factory.SubFactory(SucursalFactory)
+    nombre = factory.Sequence(lambda n: f"Cliente {n}")
+    apellido_paterno = "Perez"
+    telefono = factory.Sequence(lambda n: f"555{n:07d}")
+
+
+class AdeudoFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = Adeudo
+
+    id_cliente = factory.SubFactory(ClienteFactory)
+    monto_total = Decimal("100.00")
+    saldo = factory.LazyAttribute(lambda o: o.monto_total)
+
+
+class AbonoAdeudoFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = AbonoAdeudo
+
+    id_adeudo = factory.SubFactory(AdeudoFactory)
+    monto = Decimal("10.00")
