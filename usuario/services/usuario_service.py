@@ -1,9 +1,12 @@
+from uuid import uuid4
+
 from django.contrib.auth.models import User
 from django.db import transaction
+from django.utils import timezone
 from rest_framework.exceptions import PermissionDenied
 
 from usuario.repositories.usuario_repository import UserRepository
-from usuario.models import Perfil
+from usuario.models import Perfil, SesionActiva
 from rest_framework_simplejwt.tokens import RefreshToken
 from repository.base_service import BaseService
 from repository.permissions import es_staff, rol_de_usuario, sucursal_de_usuario
@@ -20,10 +23,20 @@ class UserService(BaseService):
     def login(self, username, password):
         user = self.repository.get_by_username(username)
         if user and user.is_active and user.check_password(password):
+            sid = uuid4().hex
             refresh = RefreshToken.for_user(user)
+            refresh["sid"] = sid
+            access = refresh.access_token
+            SesionActiva.objects.update_or_create(
+                usuario=user,
+                defaults={
+                    "session_jti": sid,
+                    "ultima_actividad": timezone.now(),
+                },
+            )
             return {
                 "refresh": str(refresh),
-                "access": str(refresh.access_token),
+                "access": str(access),
                 "user": {
                     "id": user.id,
                     "username": user.username,
