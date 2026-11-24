@@ -57,6 +57,9 @@ class ProductoListCreateView(BaseListController):
         kwargs = {}
         for campo in ("search", "clave", "marca", "codigo_barras"):
             kwargs.update(self._texto(params, campo))
+        sku = params.get("sku")
+        if sku:
+            kwargs["clave"] = sku
         for campo, alternativo in (
             ("sucursal_id", None),
             ("tipo_id", "id_tipo"),
