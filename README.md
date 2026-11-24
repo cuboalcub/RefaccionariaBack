@@ -80,6 +80,13 @@ python manage.py runserver
 - `GET /api/clientes/` filtra por sucursal: no-staff solo ve la suya (sin sucursal → 400); staff puede usar `?sucursal_id=<id>` o ver todos.
 - `POST /api/clientes/` toma `id_sucursal` del perfil del usuario; no-staff no puede asignar otra sucursal. `PUT`/`DELETE`/`GET` por id también quedan acotados (otra sucursal → 403).
 
+### Adeudos (deudas de clientes)
+- `GET /api/adeudos/` lista con filtros `?sucursal_id=`, `?cliente_id=` y `?estado=` (`pendiente`/`pagado`/`cancelado`). La sucursal del adeudo se deriva del cliente; no-staff solo ve la suya (sin sucursal → 400), staff puede filtrar o ver todos.
+- `POST /api/adeudos/` recibe `id_cliente`, opcionalmente `id_venta` y `monto_total`. Si hay venta y no se manda monto, se usa `Venta.total`; la venta debe ser del mismo cliente y no puede tener otro adeudo. `saldo` y `estado` los calcula el servidor (`saldo = monto_total`, estado `pendiente`).
+- `GET/PUT/DELETE /api/adeudos/<id>/`: `PUT` solo cambia `concepto`/`monto_total` (este último sin abonos registrados); `DELETE` cancela el adeudo (`estado=cancelado`) sin borrar el historial.
+- `GET /api/adeudos/<id>/abonos/` lista abonos y `POST` registra uno con `monto` (y opcional `id_metodo_pago`). Valida `0 < monto <= saldo`, bajando el saldo; al llegar a 0 el adeudo pasa a `pagado`. No se abonan adeudos `pagado`/`cancelado`.
+- Un cliente con adeudos no puede borrarse (`PROTECT`). Permisos: leer `catalogos.leer`, crear `catalogos.crear`, editar/cancelar `catalogos.escribir`.
+
 ### Ventas
 - `POST /api/ventas/` **ignora** `total`, `id_usuario` e `id_inventario` enviados por el cliente. `id_usuario` y sucursal se toman automáticamente del JWT/perfil (`Authorization: Bearer <access_token>` → `Perfil.sucursal`). Solo recibe `id_metodo_pago` (más `detalles` opcional para creación atómica). El total se calcula automáticamente sumando los `subtotal` de sus detalles y agregando 16% de IVA (`total = subtotal + iva`). Staff/superuser puede enviar `sucursal_id` como override explícito. Sin JWT se exige `id_sucursal`; `id_inventario` ya no se mapea. Las respuestas exponen `id_sucursal` y `vendedor` (nombre completo o `username`); `GET /api/ventas/` filtra por `sucursal_id`.
 - `POST /api/detalleventa/` (crear) está **deprecado** → `410 Gone`: crear siempre con `POST /api/ventas/` + `detalles` (atómico). `GET/PUT/DELETE` por unidad siguen vigentes; al ajustar/borrar el detalle, la salida se revierte (con locks de venta + stock).
